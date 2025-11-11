@@ -137,10 +137,9 @@ def create_views_vs_bsr_chart(df: pd.DataFrame) -> go.Figure | None:
         xaxis=dict(title="Date"),
         yaxis=dict(title="TikTok Views"),
         yaxis2=dict(
-            title="Amazon BSR (lower is better)",
+            title="Amazon BSR",
             overlaying="y",
             side="right",
-            autorange="reversed",
         ),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         hovermode="x unified",
@@ -176,8 +175,7 @@ def create_bsr_line_chart(df: pd.DataFrame) -> go.Figure | None:
     )
     fig.update_layout(
         xaxis_title="Date",
-        yaxis_title="Amazon BSR (lower is better)",
+        yaxis_title="Amazon BSR",
         template="plotly_white",
     )
-    fig.update_yaxes(autorange="reversed")
     return fig
