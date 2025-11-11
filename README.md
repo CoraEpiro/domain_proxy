@@ -1,24 +1,27 @@
-# Dashboard Proxy
+# True Sea Moss Performance Dashboard (Streamlit Only)
 
-A minimal Next.js app that rewrites every request to the Streamlit dashboard at
-`https://www.truseamossanalyzer.one/Performance_Dashboard`. Deploy it on Vercel,
-attach your custom domain, and visitors will see the dashboard while the URL stays
-on your domain.
+This repository contains a standalone Streamlit app that renders the TikTok vs.
+Amazon BSR dashboard. Deploy it directly (Railway, Render, Streamlit Community
+Cloud, etc.) and map your new domain to this service—no proxy or redirect needed.
 
-## Deploy steps
-
-1. Push this repo to GitHub (or import directly in Vercel).
-2. Create a new Vercel project from it. Default build settings are fine.
-3. Add your custom domain to the Vercel project. Vercel will ask for a DNS record,
-   usually a CNAME pointing to `cname.vercel-dns.com`.
-4. Once DNS propagates, the domain will load your dashboard.
-
-Run locally with:
+## Run locally
 
 ```bash
-npm install
-npm run dev
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+streamlit run app.py
 ```
 
-Visit `http://localhost:3000` and you’ll be proxied to the dashboard.
+The app will start at `http://localhost:8501`.
+
+## Deploy
+
+1. Push this repo to your hosting provider (Railway, Render, Streamlit Cloud, etc.).
+2. Set the working directory to the repo root and run `pip install -r requirements.txt`.
+3. Start the service with `streamlit run app.py --server.port $PORT --server.address 0.0.0.0`.
+4. Attach your custom domain through your host’s settings.
+
+The `data/` directory contains the TikTok CSV used for the charts; `reference_data/`
+is a baked-in fallback if the runtime volume is empty.
 
