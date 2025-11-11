@@ -109,12 +109,15 @@ def load_views_bsr_data(csv_path: Path = TIKTOK_DATA_PATH) -> pd.DataFrame:
 def create_views_vs_bsr_chart(df: pd.DataFrame) -> go.Figure | None:
     if df.empty:
         return None
+    plot_df = df.copy()
+    max_bsr = plot_df["BSR Amazon"].max()
+    plot_df["bsr_improvement"] = max_bsr - plot_df["BSR Amazon"]
 
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
-            x=df["date"],
-            y=df["total_views"],
+            x=plot_df["date"],
+            y=plot_df["total_views"],
             name="TikTok Views",
             mode="lines+markers",
             line=dict(color="#1f77b4"),
@@ -123,24 +126,23 @@ def create_views_vs_bsr_chart(df: pd.DataFrame) -> go.Figure | None:
     )
     fig.add_trace(
         go.Scatter(
-            x=df["date"],
-            y=df["BSR Amazon"],
-            name="Amazon BSR",
+            x=plot_df["date"],
+            y=plot_df["bsr_improvement"],
+            name="Amazon BSR Improvement",
             mode="lines+markers",
             line=dict(color="#ff7f0e"),
             yaxis="y2",
-            hovertemplate="Date: %{x|%b %d, %Y}<br>BSR: %{y:,.0f}<extra></extra>",
+            hovertemplate="Date: %{x|%b %d, %Y}<br>Improvement: %{y:,.0f}<extra></extra>",
         )
     )
     fig.update_layout(
-        title="TikTok Views vs. Amazon BSR",
+        title="TikTok Views vs. Amazon BSR Improvement",
         xaxis=dict(title="Date"),
         yaxis=dict(title="TikTok Views"),
         yaxis2=dict(
-            title="Amazon BSR (lower is better)",
+            title="Amazon BSR Improvement (higher is better)",
             overlaying="y",
             side="right",
-            autorange="reversed",
         ),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         hovermode="x unified",
@@ -167,19 +169,21 @@ def create_views_line_chart(df: pd.DataFrame) -> go.Figure | None:
 def create_bsr_line_chart(df: pd.DataFrame) -> go.Figure | None:
     if df.empty:
         return None
+    plot_df = df.copy()
+    max_bsr = plot_df["BSR Amazon"].max()
+    plot_df["bsr_improvement"] = max_bsr - plot_df["BSR Amazon"]
     fig = px.line(
-        df,
+        plot_df,
         x="date",
-        y="BSR Amazon",
-        title="Amazon BSR Over Time",
+        y="bsr_improvement",
+        title="Amazon BSR Improvement Over Time",
         markers=True,
     )
     fig.update_layout(
         xaxis_title="Date",
-        yaxis_title="Amazon BSR (lower is better)",
+        yaxis_title="Improvement (higher is better)",
         template="plotly_white",
     )
-    fig.update_yaxes(autorange="reversed")
     return fig
 
 
