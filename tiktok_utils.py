@@ -68,14 +68,29 @@ def load_views_bsr_data(csv_path: Path = TIKTOK_DATA_PATH) -> pd.DataFrame:
     df_raw = pd.read_csv(csv_path, header=1)
     df_raw.columns = df_raw.columns.str.strip()
 
-    view_cols = [col for col in df_raw.columns if "view" in col.lower()]
-    numeric_cols = df_raw[view_cols].apply(
-        lambda col: pd.to_numeric(col.astype(str).str.replace(r"[^\d.-]", "", regex=True), errors="coerce")
-    )
+    sum_of_views_col = None
+    for col in df_raw.columns:
+        if col.strip().lower() == "sum of views":
+            sum_of_views_col = col
+            break
+
+    if sum_of_views_col:
+        total_views = pd.to_numeric(
+            df_raw[sum_of_views_col].astype(str).str.replace(r"[^\d.-]", "", regex=True),
+            errors="coerce",
+        )
+    else:
+        view_cols = [col for col in df_raw.columns if "view" in col.lower()]
+        numeric_cols = df_raw[view_cols].apply(
+            lambda col: pd.to_numeric(
+                col.astype(str).str.replace(r"[^\d.-]", "", regex=True), errors="coerce"
+            )
+        )
+        total_views = numeric_cols.sum(axis=1, skipna=True)
 
     df = pd.DataFrame()
     df["date"] = _parse_tiktok_dates(df_raw["date"])
-    df["total_views"] = numeric_cols.sum(axis=1, skipna=True)
+    df["total_views"] = total_views
     df["BSR Amazon"] = pd.to_numeric(
         df_raw.get("BSR Amazon", pd.Series(dtype=float)),
         errors="coerce"
