@@ -102,6 +102,8 @@ def load_views_bsr_data(csv_path: Path = TIKTOK_DATA_PATH) -> pd.DataFrame:
 
     df = df.dropna(subset=["date", "BSR Amazon"])
     df = df[df["total_views"].notna()]
+    # Exclude days with zero or negative views
+    df = df[df["total_views"] > 0]
     df = df.sort_values("date")
     return df[["date", "total_views", "BSR Amazon"]]
 
