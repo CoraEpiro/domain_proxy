@@ -11,6 +11,7 @@ from tiktok_utils import (
     get_date_to_tiktok_urls_from_google_sheets,
     parse_tiktok_video_id,
     get_tiktok_embed_url,
+    get_tiktok_oembed_html,
     merge_with_manual_tiktok_links,
     create_views_vs_bsr_chart,
     create_views_line_chart,
@@ -382,12 +383,14 @@ def render_current_mode_dashboard():
                             urls = date_to_urls.get(pd.to_datetime(pick).normalize(), [])
                             shown = 0
                             for url in urls:
-                                vid = parse_tiktok_video_id(url)
-                                if vid:
-                                    components.iframe(get_tiktok_embed_url(vid), height=640, scrolling=False)
-                                else:
-                                    embed_html = f'''<blockquote class="tiktok-embed" cite="{url}" data-video-id="" style="max-width: 605px;min-width: 325px;"><section></section></blockquote><script async src="https://www.tiktok.com/embed.js"></script>'''
-                                    components.html(embed_html, height=700, scrolling=False)
+                                embed_html = get_tiktok_oembed_html(url)
+                                # Wrap in a container div for better styling
+                                full_html = f'''
+                                <div style="display: flex; justify-content: center; margin: 20px 0;">
+                                    {embed_html}
+                                </div>
+                                '''
+                                components.html(full_html, height=800, scrolling=False)
                                 shown += 1
                                 if shown >= 3:
                                     break
@@ -402,20 +405,14 @@ def render_current_mode_dashboard():
                         # Show up to first 3 embeds for that day
                         shown = 0
                         for url in urls:
-                            vid = parse_tiktok_video_id(url)
-                            if vid:
-                                # Use direct iframe when we have a numeric video id
-                                embed_url = get_tiktok_embed_url(vid)
-                                components.iframe(embed_url, height=640, scrolling=False)
-                            else:
-                                # Fallback: use TikTok official embed snippet with the raw URL (works for vm.tiktok.com too)
-                                embed_html = f'''
-                                <blockquote class="tiktok-embed" cite="{url}" data-video-id="" style="max-width: 605px;min-width: 325px;">
-                                  <section></section>
-                                </blockquote>
-                                <script async src="https://www.tiktok.com/embed.js"></script>
-                                '''
-                                components.html(embed_html, height=700, scrolling=False)
+                            embed_html = get_tiktok_oembed_html(url)
+                            # Wrap in a container div for better styling
+                            full_html = f'''
+                            <div style="display: flex; justify-content: center; margin: 20px 0;">
+                                {embed_html}
+                            </div>
+                            '''
+                            components.html(full_html, height=800, scrolling=False)
                             shown += 1
                             if shown >= 3:
                                 break
@@ -433,12 +430,14 @@ def render_current_mode_dashboard():
                             continue
                         st.markdown(f"**{pd.to_datetime(d).strftime('%Y-%m-%d')}**")
                         for url in urls:
-                            vid = parse_tiktok_video_id(url)
-                            if vid:
-                                components.iframe(get_tiktok_embed_url(vid), height=640, scrolling=False)
-                            else:
-                                embed_html = f'''<blockquote class="tiktok-embed" cite="{url}" data-video-id="" style="max-width: 605px;min-width: 325px;"><section></section></blockquote><script async src="https://www.tiktok.com/embed.js"></script>'''
-                                components.html(embed_html, height=700, scrolling=False)
+                            embed_html = get_tiktok_oembed_html(url)
+                            # Wrap in a container div for better styling
+                            full_html = f'''
+                            <div style="display: flex; justify-content: center; margin: 20px 0;">
+                                {embed_html}
+                            </div>
+                            '''
+                            components.html(full_html, height=800, scrolling=False)
 
 
 def render_historical_dashboard():

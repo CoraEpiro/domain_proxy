@@ -519,7 +519,32 @@ def parse_tiktok_video_id(url: str) -> Optional[str]:
 
 def get_tiktok_embed_url(video_id: str) -> str:
     """Build TikTok embed URL for a given video id."""
-    return f"https://www.tiktok.com/embed/v2/video/{video_id}"
+    return f"https://www.tiktok.com/embed/v2/{video_id}"
+
+
+def get_tiktok_oembed_html(url: str) -> str:
+    """Get TikTok embed HTML using oEmbed API or fallback to blockquote embed."""
+    try:
+        # Try to get oEmbed HTML
+        import urllib.request
+        import json
+        oembed_url = f"https://www.tiktok.com/oembed?url={urllib.parse.quote(url)}"
+        with urllib.request.urlopen(oembed_url, timeout=5) as resp:
+            data = json.loads(resp.read())
+            html = data.get('html', '')
+            if html:
+                return html
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.debug(f"oEmbed failed for {url}: {e}")
+    
+    # Fallback: Use TikTok's blockquote embed
+    # Extract video ID from URL if possible
+    video_id = parse_tiktok_video_id(url)
+    if video_id:
+        return f'''<blockquote class="tiktok-embed" cite="{url}" data-video-id="{video_id}" style="max-width: 605px;min-width: 325px;" data-embed-from="oembed" data-embed-type="video"><section><a target="_blank" title="@tiktok" href="{url}"></a></section></blockquote><script async src="https://www.tiktok.com/embed.js"></script>'''
+    else:
+        return f'''<blockquote class="tiktok-embed" cite="{url}" style="max-width: 605px;min-width: 325px;" data-embed-from="oembed" data-embed-type="video"><section><a target="_blank" title="@tiktok" href="{url}"></a></section></blockquote><script async src="https://www.tiktok.com/embed.js"></script>'''
 
 
 def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[str] = None) -> dict:
