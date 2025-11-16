@@ -643,16 +643,21 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
                     # likely end of data
                     continue
                 
-                # Try parsing the date
+                # Try parsing the date - handle both string and datetime objects
                 try:
-                    parsed_date = _parse_tiktok_dates(pd.Series([date_val])).iloc[0]
-                    if pd.isna(parsed_date):
-                        logger.debug(f"Row {r}: Could not parse date '{date_val}' (type: {type(date_val)})")
-                        continue
-                    day = pd.to_datetime(parsed_date).normalize()
+                    # If it's already a datetime/date object, use it directly
+                    if isinstance(date_val, (pd.Timestamp, datetime, date)):
+                        day = pd.to_datetime(date_val).normalize()
+                    else:
+                        parsed_date = _parse_tiktok_dates(pd.Series([date_val])).iloc[0]
+                        if pd.isna(parsed_date):
+                            logger.debug(f"Row {r}: Could not parse date '{date_val}' (type: {type(date_val)})")
+                            continue
+                        day = pd.to_datetime(parsed_date).normalize()
                     rows_processed += 1
+                    logger.debug(f"Row {r}: Parsed date '{date_val}' -> {day}")
                 except Exception as e:
-                    logger.debug(f"Row {r}: Error parsing date '{date_val}': {e}")
+                    logger.warning(f"Row {r}: Error parsing date '{date_val}' (type: {type(date_val)}): {e}")
                     continue
 
                 urls_for_row: list[str] = []
