@@ -422,44 +422,110 @@ def render_current_mode_dashboard():
                                 if shown >= 3:
                                     break
 
-                # Show all videos from the dataset (all dates with links) - deduplicated
+                # Show videos grouped by video (not date) - video-based view
                 st.markdown("### TikTok Videos")
                 import streamlit.components.v1 as components
-                all_days = sorted(date_to_urls.keys())
-                if not all_days:
+                import plotly.graph_objects as go
+                
+                if not url_to_dates:
                     st.caption("No TikTok links found in the selected sheet.")
                 else:
-                    # Collect all unique URLs across all dates
-                    seen_urls = set()
-                    unique_videos = []  # List of (date, url) tuples
+                    # Calculate total views per video for sorting
+                    video_stats = []
+                    for url in url_to_dates.keys():
+                        dates = sorted(url_to_dates[url])
+                        # Get views for this video across all its dates
+                        video_views = []
+                        for d in dates:
+                            day_data = daily[daily["date"].dt.normalize() == pd.to_datetime(d).normalize()]
+                            if not day_data.empty:
+                                video_views.append({
+                                    "date": d,
+                                    "views": day_data.iloc[0]["total_views"] if pd.notna(day_data.iloc[0]["total_views"]) else 0,
+                                    "bsr": day_data.iloc[0]["BSR Amazon"] if pd.notna(day_data.iloc[0]["BSR Amazon"]) else None
+                                })
+                        total_views = sum(v["views"] for v in video_views) if video_views else 0
+                        video_stats.append({
+                            "url": url,
+                            "dates": dates,
+                            "total_views": total_views,
+                            "first_date": dates[0] if dates else None,
+                            "view_data": video_views
+                        })
                     
-                    for d in all_days:
-                        urls = date_to_urls.get(d, [])
-                        for url in urls:
-                            if url not in seen_urls:
-                                seen_urls.add(url)
-                                unique_videos.append((d, url))
+                    # Sort by total views (descending)
+                    video_stats.sort(key=lambda x: x["total_views"], reverse=True)
                     
-                    if not unique_videos:
-                        st.caption("No TikTok links found in the selected sheet.")
-                    else:
-                        # Group by date for display
-                        current_date = None
-                        for d, url in unique_videos:
-                            date_str = pd.to_datetime(d).strftime('%Y-%m-%d')
-                            if date_str != current_date:
-                                st.markdown(f"**{date_str}**")
-                                current_date = date_str
-                            
-                            st.markdown(f"🔗 [Watch on TikTok]({url})")
+                    # Display each video with its performance chart
+                    for vid_stat in video_stats:
+                        url = vid_stat["url"]
+                        view_data = vid_stat["view_data"]
+                        
+                        # Create two columns: video on left, chart on right
+                        col_video, col_chart = st.columns([1, 1])
+                        
+                        with col_video:
+                            # Embed video (no link above)
                             embed_html = get_tiktok_oembed_html(url)
-                            # Wrap in a container div for better styling
                             full_html = f'''
                             <div style="display: flex; justify-content: center; margin: 20px 0; width: 100%;">
                                 {embed_html}
                             </div>
                             '''
-                            components.html(full_html, height=800, scrolling=False)
+                            components.html(full_html, height=700, scrolling=False)
+                        
+                        with col_chart:
+                            # Show views over time for this video
+                            if view_data:
+                                chart_df = pd.DataFrame(view_data)
+                                chart_df["date"] = pd.to_datetime(chart_df["date"])
+                                fig = go.Figure()
+                                
+                                # Views line
+                                fig.add_trace(go.Scatter(
+                                    x=chart_df["date"],
+                                    y=chart_df["views"],
+                                    mode='lines+markers',
+                                    name='Views',
+                                    line=dict(color='#1f77b4', width=2),
+                                    yaxis='y'
+                                ))
+                                
+                                # BSR line (if available)
+                                if chart_df["bsr"].notna().any():
+                                    fig.add_trace(go.Scatter(
+                                        x=chart_df["date"],
+                                        y=chart_df["bsr"],
+                                        mode='lines+markers',
+                                        name='BSR',
+                                        line=dict(color='#ff7f0e', width=2),
+                                        yaxis='y2'
+                                    ))
+                                    bsr_vals = chart_df["bsr"].dropna()
+                                    if len(bsr_vals) > 0:
+                                        fig.update_layout(
+                                            yaxis2=dict(
+                                                title="BSR",
+                                                overlaying='y',
+                                                side='right',
+                                                range=[bsr_vals.max() * 1.1, max(bsr_vals.min() * 0.9, 0)]
+                                            )
+                                        )
+                                
+                                fig.update_layout(
+                                    title="Views Over Time",
+                                    xaxis_title="Date",
+                                    yaxis_title="Views",
+                                    height=400,
+                                    template="plotly_white",
+                                    showlegend=True
+                                )
+                                
+                                st.plotly_chart(fig, use_container_width=True)
+                            else:
+                                st.caption("No view data available for this video")
+                        
+                        st.divider()
 
 
 def render_historical_dashboard():
