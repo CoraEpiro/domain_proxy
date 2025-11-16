@@ -4,6 +4,10 @@ import plotly.graph_objects as go
 from datetime import datetime
 from pathlib import Path
 import shutil
+import json
+from typing import Optional
+import re
+import urllib.parse
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -12,6 +16,11 @@ REFERENCE_DATA_DIR = BASE_DIR / "reference_data"
 TIKTOK_FILENAME = "TikTok 90 days history views - Sheet1.csv"
 TIKTOK_DATA_PATH = DATA_DIR / TIKTOK_FILENAME
 TIKTOK_FALLBACK_PATH = REFERENCE_DATA_DIR / TIKTOK_FILENAME
+
+# Current mode file paths
+CURRENT_VIEWS_FILENAME = "current_views.csv"
+CURRENT_VIEWS_PATH = DATA_DIR / CURRENT_VIEWS_FILENAME
+BSR_MANUAL_ENTRIES_PATH = DATA_DIR / "manual_bsr_entries.json"
 
 
 def _ensure_dataset(csv_path: Path) -> Path:
@@ -181,3 +190,307 @@ def create_bsr_line_chart(df: pd.DataFrame) -> go.Figure | None:
         template="plotly_white",
     )
     return fig
+
+
+def load_current_views_data(csv_path: Path = CURRENT_VIEWS_PATH) -> pd.DataFrame:
+    """Load current mode views data from daily updated file.
+    
+    Supports multiple CSV formats:
+    1. Same format as historical (header row, date, multiple view columns, sum of views)
+    2. Simple format: date, views (or total_views)
+    3. Simple format: date, views columns without header row
+    """
+    csv_path = Path(csv_path)
+    if not csv_path.exists():
+        return pd.DataFrame()
+    
+    try:
+        # Try reading with header=1 first (historical format)
+        try:
+            df_raw = pd.read_csv(csv_path, header=1)
+            df_raw.columns = df_raw.columns.str.strip()
+            has_header = True
+        except:
+            # Try reading without header offset (simple format)
+            df_raw = pd.read_csv(csv_path)
+            df_raw.columns = df_raw.columns.str.strip()
+            has_header = False
+        
+        # Find date column
+        date_col = None
+        for col in df_raw.columns:
+            if col.strip().lower() in ["date", "dates"]:
+                date_col = col
+                break
+        
+        if date_col is None:
+            # Try first column as date
+            date_col = df_raw.columns[0]
+        
+        # Parse dates
+        dates = _parse_tiktok_dates(df_raw[date_col])
+        
+        # Find views column(s)
+        sum_of_views_col = None
+        for col in df_raw.columns:
+            if col.strip().lower() == "sum of views":
+                sum_of_views_col = col
+                break
+        
+        if sum_of_views_col:
+            # Use "Sum of Views" column if available
+            total_views = pd.to_numeric(
+                df_raw[sum_of_views_col].astype(str).str.replace(r"[^\d.-]", "", regex=True),
+                errors="coerce",
+            )
+        else:
+            # Look for view columns
+            view_cols = [col for col in df_raw.columns if "view" in col.lower() and col != date_col]
+            
+            if view_cols:
+                # Sum all view columns
+                numeric_cols = df_raw[view_cols].apply(
+                    lambda col: pd.to_numeric(
+                        col.astype(str).str.replace(r"[^\d.-]", "", regex=True), errors="coerce"
+                    )
+                )
+                total_views = numeric_cols.sum(axis=1, skipna=True)
+            else:
+                # Try to find a single numeric column (might be total views)
+                numeric_cols_found = []
+                for col in df_raw.columns:
+                    if col != date_col:
+                        try:
+                            test_vals = pd.to_numeric(
+                                df_raw[col].astype(str).str.replace(r"[^\d.-]", "", regex=True),
+                                errors="coerce"
+                            )
+                            if test_vals.notna().any():
+                                numeric_cols_found.append(col)
+                        except:
+                            pass
+                
+                if numeric_cols_found:
+                    # Use the first numeric column found (or sum if multiple)
+                    if len(numeric_cols_found) == 1:
+                        total_views = pd.to_numeric(
+                            df_raw[numeric_cols_found[0]].astype(str).str.replace(r"[^\d.-]", "", regex=True),
+                            errors="coerce",
+                        )
+                    else:
+                        # Sum multiple numeric columns
+                        numeric_cols = df_raw[numeric_cols_found].apply(
+                            lambda col: pd.to_numeric(
+                                col.astype(str).str.replace(r"[^\d.-]", "", regex=True), errors="coerce"
+                            )
+                        )
+                        total_views = numeric_cols.sum(axis=1, skipna=True)
+                else:
+                    total_views = pd.Series([0] * len(df_raw), dtype=float)
+        
+        df = pd.DataFrame()
+        df["date"] = dates
+        df["total_views"] = total_views
+        
+        # Load manual BSR entries
+        manual_bsr = load_manual_bsr_entries()
+        
+        # Merge manual BSR entries
+        df["BSR Amazon"] = None
+        for entry in manual_bsr:
+            entry_date = pd.to_datetime(entry["date"])
+            mask = df["date"].dt.date == entry_date.date()
+            if mask.any():
+                df.loc[mask, "BSR Amazon"] = entry["bsr"]
+            else:
+                # Add new row if date doesn't exist
+                new_row = pd.DataFrame({
+                    "date": [entry_date],
+                    "total_views": [0],
+                    "BSR Amazon": [entry["bsr"]]
+                })
+                df = pd.concat([df, new_row], ignore_index=True)
+        
+        df = df.dropna(subset=["date"])
+        df = df[df["total_views"].notna() | df["BSR Amazon"].notna()]
+        df = df.sort_values("date")
+        return df[["date", "total_views", "BSR Amazon"]]
+    except Exception as e:
+        # Return empty dataframe on any error
+        return pd.DataFrame()
+
+
+def load_manual_bsr_entries() -> list:
+    """Load manual BSR entries from JSON file."""
+    if not BSR_MANUAL_ENTRIES_PATH.exists():
+        return []
+    
+    try:
+        with open(BSR_MANUAL_ENTRIES_PATH, "r") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def save_manual_bsr_entry(date: str, bsr: float) -> bool:
+    """Save or update a manual BSR entry."""
+    entries = load_manual_bsr_entries()
+    
+    # Remove existing entry for this date if any
+    entries = [e for e in entries if e["date"] != date]
+    
+    # Add new entry
+    entries.append({"date": date, "bsr": float(bsr)})
+    
+    # Sort by date
+    entries.sort(key=lambda x: x["date"])
+    
+    # Save to file
+    try:
+        BSR_MANUAL_ENTRIES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(BSR_MANUAL_ENTRIES_PATH, "w") as f:
+            json.dump(entries, f, indent=2)
+        return True
+    except Exception:
+        return False
+
+
+def delete_manual_bsr_entry(date: str) -> bool:
+    """Delete a manual BSR entry."""
+    entries = load_manual_bsr_entries()
+    entries = [e for e in entries if e["date"] != date]
+    
+    try:
+        with open(BSR_MANUAL_ENTRIES_PATH, "w") as f:
+            json.dump(entries, f, indent=2)
+        return True
+    except Exception:
+        return False
+
+
+def get_file_modification_time(file_path: Path) -> Optional[datetime]:
+    """Get file modification time."""
+    try:
+        return datetime.fromtimestamp(file_path.stat().st_mtime)
+    except Exception:
+        return None
+
+
+def parse_google_sheets_url(url: str) -> Optional[dict]:
+    """Parse Google Sheets URL to extract sheet ID and GID.
+    
+    Returns dict with 'sheet_id' and 'gid', or None if URL is invalid.
+    """
+    # Pattern: https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit?gid={GID}#gid={GID}
+    pattern = r'docs\.google\.com/spreadsheets/d/([a-zA-Z0-9-_]+)'
+    match = re.search(pattern, url)
+    
+    if not match:
+        return None
+    
+    sheet_id = match.group(1)
+    
+    # Extract GID from URL (can be in query params or hash)
+    gid = None
+    if 'gid=' in url:
+        gid_match = re.search(r'gid=(\d+)', url)
+        if gid_match:
+            gid = gid_match.group(1)
+    
+    return {"sheet_id": sheet_id, "gid": gid}
+
+
+def get_google_sheets_csv_url(sheet_id: str, gid: Optional[str] = None) -> str:
+    """Convert Google Sheets URL to CSV export URL."""
+    base_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+    if gid:
+        base_url += f"&gid={gid}"
+    return base_url
+
+
+def load_current_views_data_from_google_sheets(url: str) -> pd.DataFrame:
+    """Load current mode views data from Google Sheets URL."""
+    try:
+        # Parse the Google Sheets URL
+        parsed = parse_google_sheets_url(url)
+        if not parsed:
+            return pd.DataFrame()
+        
+        # Convert to CSV export URL
+        csv_url = get_google_sheets_csv_url(parsed["sheet_id"], parsed.get("gid"))
+        
+        # Read CSV from Google Sheets
+        # Google Sheets CSV export has the data starting from row 5 (index 4) based on the structure
+        # Row 4 has "Sum >>", Row 5 has headers, Row 6+ has data
+        df_raw = pd.read_csv(csv_url, header=4)  # Skip first 4 rows, use row 5 as header
+        df_raw.columns = df_raw.columns.str.strip()
+        
+        # Find date column
+        date_col = None
+        for col in df_raw.columns:
+            if col.strip().lower() in ["date", "dates"]:
+                date_col = col
+                break
+        
+        if date_col is None:
+            # Try first column as date
+            date_col = df_raw.columns[0]
+        
+        # Parse dates
+        dates = _parse_tiktok_dates(df_raw[date_col])
+        
+        # Find "Views Sum" column (based on the Google Sheets structure)
+        views_sum_col = None
+        for col in df_raw.columns:
+            if col.strip().lower() == "views sum":
+                views_sum_col = col
+                break
+        
+        if views_sum_col:
+            total_views = pd.to_numeric(
+                df_raw[views_sum_col].astype(str).str.replace(r"[^\d.-]", "", regex=True),
+                errors="coerce",
+            )
+        else:
+            # Fallback: look for any view columns and sum them
+            view_cols = [col for col in df_raw.columns if "view" in col.lower() and col != date_col]
+            if view_cols:
+                numeric_cols = df_raw[view_cols].apply(
+                    lambda col: pd.to_numeric(
+                        col.astype(str).str.replace(r"[^\d.-]", "", regex=True), errors="coerce"
+                    )
+                )
+                total_views = numeric_cols.sum(axis=1, skipna=True)
+            else:
+                total_views = pd.Series([0] * len(df_raw), dtype=float)
+        
+        df = pd.DataFrame()
+        df["date"] = dates
+        df["total_views"] = total_views
+        
+        # Load manual BSR entries
+        manual_bsr = load_manual_bsr_entries()
+        
+        # Merge manual BSR entries
+        df["BSR Amazon"] = None
+        for entry in manual_bsr:
+            entry_date = pd.to_datetime(entry["date"])
+            mask = df["date"].dt.date == entry_date.date()
+            if mask.any():
+                df.loc[mask, "BSR Amazon"] = entry["bsr"]
+            else:
+                # Add new row if date doesn't exist
+                new_row = pd.DataFrame({
+                    "date": [entry_date],
+                    "total_views": [0],
+                    "BSR Amazon": [entry["bsr"]]
+                })
+                df = pd.concat([df, new_row], ignore_index=True)
+        
+        df = df.dropna(subset=["date"])
+        df = df[df["total_views"].notna() | df["BSR Amazon"].notna()]
+        df = df.sort_values("date")
+        return df[["date", "total_views", "BSR Amazon"]]
+    except Exception as e:
+        # Return empty dataframe on any error
+        return pd.DataFrame()
