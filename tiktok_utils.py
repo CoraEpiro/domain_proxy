@@ -12,6 +12,7 @@ import urllib.request
 from io import BytesIO
 from openpyxl import load_workbook
 import sqlite3
+import logging
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -524,27 +525,51 @@ def get_tiktok_embed_url(video_id: str) -> str:
 
 def get_tiktok_oembed_html(url: str) -> str:
     """Get TikTok embed HTML using oEmbed API or fallback to blockquote embed."""
+    logger = logging.getLogger(__name__)
     try:
-        # Try to get oEmbed HTML
-        import urllib.request
-        import json
+        # Try to get oEmbed HTML from TikTok's API
         oembed_url = f"https://www.tiktok.com/oembed?url={urllib.parse.quote(url)}"
         with urllib.request.urlopen(oembed_url, timeout=5) as resp:
             data = json.loads(resp.read())
             html = data.get('html', '')
             if html:
+                logger.info(f"Got oEmbed HTML for {url}")
                 return html
     except Exception as e:
-        logger = logging.getLogger(__name__)
-        logger.debug(f"oEmbed failed for {url}: {e}")
+        logger.debug(f"oEmbed API failed for {url}: {e}, using fallback")
     
-    # Fallback: Use TikTok's blockquote embed
+    # Fallback: Use TikTok's blockquote embed with proper structure
     # Extract video ID from URL if possible
     video_id = parse_tiktok_video_id(url)
+    
+    # TikTok embed blockquote format that works better
     if video_id:
-        return f'''<blockquote class="tiktok-embed" cite="{url}" data-video-id="{video_id}" style="max-width: 605px;min-width: 325px;" data-embed-from="oembed" data-embed-type="video"><section><a target="_blank" title="@tiktok" href="{url}"></a></section></blockquote><script async src="https://www.tiktok.com/embed.js"></script>'''
+        embed_html = f'''
+        <blockquote class="tiktok-embed" cite="{url}" data-video-id="{video_id}" 
+                     style="max-width: 605px; min-width: 325px;" 
+                     data-embed-from="oembed" 
+                     data-embed-type="video">
+            <section>
+                <a target="_blank" title="@tiktok" href="{url}"></a>
+            </section>
+        </blockquote>
+        <script async src="https://www.tiktok.com/embed.js"></script>
+        '''
     else:
-        return f'''<blockquote class="tiktok-embed" cite="{url}" style="max-width: 605px;min-width: 325px;" data-embed-from="oembed" data-embed-type="video"><section><a target="_blank" title="@tiktok" href="{url}"></a></section></blockquote><script async src="https://www.tiktok.com/embed.js"></script>'''
+        # For short links or URLs without video ID, use the full URL
+        embed_html = f'''
+        <blockquote class="tiktok-embed" cite="{url}" 
+                     style="max-width: 605px; min-width: 325px;" 
+                     data-embed-from="oembed" 
+                     data-embed-type="video">
+            <section>
+                <a target="_blank" title="@tiktok" href="{url}"></a>
+            </section>
+        </blockquote>
+        <script async src="https://www.tiktok.com/embed.js"></script>
+        '''
+    
+    return embed_html
 
 
 def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[str] = None) -> dict:
