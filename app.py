@@ -376,34 +376,6 @@ def render_current_mode_dashboard():
                             "BSR": int(r["BSR Amazon"]) if pd.notna(r["BSR Amazon"]) else None,
                         })
                     st.dataframe(pd.DataFrame(diag), use_container_width=True, hide_index=True)
-                    # Optional: let user pick any date with URLs to preview embeds
-                    dates_with_urls = [k for k, v in date_to_urls.items() if v]
-                    if dates_with_urls:
-                        pick = st.selectbox("Preview videos for a date (ignores thresholds)", options=[pd.to_datetime(d).strftime("%Y-%m-%d") for d in dates_with_urls])
-                        if pick:
-                            import streamlit.components.v1 as components
-                            urls = date_to_urls.get(pd.to_datetime(pick).normalize(), [])
-                            # Deduplicate URLs for this date
-                            seen = set()
-                            unique_urls = []
-                            for url in urls:
-                                if url not in seen:
-                                    seen.add(url)
-                                    unique_urls.append(url)
-                            
-                            shown = 0
-                            for url in unique_urls:
-                                # Embed video (no link above)
-                                embed_html = get_tiktok_oembed_html(url)
-                                full_html = f'''
-                                <div style="display: flex; justify-content: center; margin: 20px 0; width: 100%;">
-                                    {embed_html}
-                                </div>
-                                '''
-                                components.html(full_html, height=800, scrolling=False)
-                                shown += 1
-                                if shown >= 3:
-                                    break
                 else:
                     import streamlit.components.v1 as components
                     seen_all = set()  # Track all videos shown across all dates
