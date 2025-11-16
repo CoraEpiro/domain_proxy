@@ -8,6 +8,9 @@ import json
 from typing import Optional
 import re
 import urllib.parse
+import urllib.request
+from io import BytesIO
+from openpyxl import load_workbook
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -518,42 +521,70 @@ def get_tiktok_embed_url(video_id: str) -> str:
 
 
 def get_date_to_tiktok_urls_from_google_sheets(url: str) -> dict:
-    """Return mapping of date (pd.Timestamp normalized to day) -> list of TikTok URLs found in that row.
-    Reads the same Google Sheet structure as load_current_views_data_from_google_sheets.
+    """Return mapping of date (pd.Timestamp normalized to day) -> list of TikTok URLs found on that row.
+    IMPORTANT: We use the XLSX export so we can read real cell hyperlinks (CSV loses links).
     """
     mapping: dict = {}
     try:
         parsed = parse_google_sheets_url(url)
         if not parsed:
             return mapping
-        csv_url = get_google_sheets_csv_url(parsed["sheet_id"], parsed.get("gid"))
-        df_raw = pd.read_csv(csv_url, header=4)
-        df_raw.columns = df_raw.columns.str.strip()
+        # Download XLSX
+        xlsx_url = f"https://docs.google.com/spreadsheets/d/{parsed['sheet_id']}/export?format=xlsx"
+        with urllib.request.urlopen(xlsx_url) as resp:
+            content = resp.read()
+        wb = load_workbook(BytesIO(content), data_only=True)
 
-        # Detect date column
-        date_col = None
-        for col in df_raw.columns:
-            if col.strip().lower() in ["date", "dates"]:
-                date_col = col
+        # Heuristics: pick the first sheet that contains a header row with 'Date'
+        for ws in wb.worksheets:
+            date_col_idx = None
+            header_row_idx = None
+            # scan first 20 rows to find header
+            for r in range(1, min(ws.max_row, 20) + 1):
+                row_vals = [str(ws.cell(r, c).value).strip().lower() if ws.cell(r, c).value is not None else "" for c in range(1, min(ws.max_column, 60) + 1)]
+                if any(val == "date" or val == "dates" for val in row_vals):
+                    header_row_idx = r
+                    for c, val in enumerate(row_vals, start=1):
+                        if val in ("date", "dates"):
+                            date_col_idx = c
+                            break
+                    break
+            if header_row_idx is None or date_col_idx is None:
+                continue
+
+            # Iterate rows after header, collect date + any TikTok hyperlinks in the row
+            for r in range(header_row_idx + 1, ws.max_row + 1):
+                date_cell = ws.cell(r, date_col_idx)
+                date_val = date_cell.value
+                if date_val is None or str(date_val).strip() == "":
+                    # likely end of data
+                    continue
+                parsed_date = _parse_tiktok_dates(pd.Series([date_val])).iloc[0]
+                if pd.isna(parsed_date):
+                    continue
+                day = pd.to_datetime(parsed_date).normalize()
+
+                urls_for_row: list[str] = []
+                # Scan across reasonable number of columns for hyperlinks
+                for c in range(1, min(ws.max_column, 60) + 1):
+                    cell = ws.cell(r, c)
+                    hl = getattr(cell, "hyperlink", None)
+                    if hl and getattr(hl, "target", None):
+                        target = hl.target
+                        if "tiktok.com" in target:
+                            urls_for_row.append(target)
+
+                if urls_for_row:
+                    existing = mapping.get(day, [])
+                    for u in urls_for_row:
+                        if u not in existing:
+                            existing.append(u)
+                    mapping[day] = existing
+
+            # If we populated mapping from this sheet, we can stop
+            if mapping:
                 break
-        if date_col is None:
-            date_col = df_raw.columns[0]
 
-        # Iterate rows and collect URLs
-        for _, row in df_raw.iterrows():
-            date_val = row.get(date_col)
-            parsed_date = _parse_tiktok_dates(pd.Series([date_val])).iloc[0]
-            if pd.isna(parsed_date):
-                continue
-            urls = extract_tiktok_urls_from_row(row)
-            if not urls:
-                continue
-            day = pd.to_datetime(parsed_date).normalize()
-            existing = mapping.get(day, [])
-            for u in urls:
-                if u not in existing:
-                    existing.append(u)
-            mapping[day] = existing
         return mapping
     except Exception:
         return mapping
