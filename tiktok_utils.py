@@ -510,7 +510,21 @@ def parse_tiktok_video_id(url: str) -> Optional[str]:
         # Normalize
         parsed = urllib.parse.urlparse(url)
         path = parsed.path or ""
-        m = re.search(r"/video/(\\d+)", path)
+        m = re.search(r"/video/(\d+)", path)
+        if m:
+            return m.group(1)
+        return None
+    except Exception:
+        return None
+
+
+def parse_tiktok_username(url: str) -> Optional[str]:
+    """Extract TikTok username from URL like @username."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        path = parsed.path or ""
+        # Match @username in path like /@username/video/...
+        m = re.search(r"/@([^/]+)", path)
         if m:
             return m.group(1)
         return None
@@ -524,50 +538,40 @@ def get_tiktok_embed_url(video_id: str) -> str:
 
 
 def get_tiktok_oembed_html(url: str) -> str:
-    """Get TikTok embed HTML using oEmbed API or fallback to blockquote embed."""
+    """Get TikTok embed HTML using the exact structure that works.
+    Extracts video ID and username from the URL and builds proper embed.
+    """
     logger = logging.getLogger(__name__)
-    try:
-        # Try to get oEmbed HTML from TikTok's API
-        oembed_url = f"https://www.tiktok.com/oembed?url={urllib.parse.quote(url)}"
-        with urllib.request.urlopen(oembed_url, timeout=5) as resp:
-            data = json.loads(resp.read())
-            html = data.get('html', '')
-            if html:
-                logger.info(f"Got oEmbed HTML for {url}")
-                return html
-    except Exception as e:
-        logger.debug(f"oEmbed API failed for {url}: {e}, using fallback")
     
-    # Fallback: Use TikTok's blockquote embed with proper structure
-    # Extract video ID from URL if possible
+    # Extract video ID and username from URL
     video_id = parse_tiktok_video_id(url)
+    username = parse_tiktok_username(url)
     
-    # TikTok embed blockquote format that works better
-    if video_id:
-        embed_html = f'''
-        <blockquote class="tiktok-embed" cite="{url}" data-video-id="{video_id}" 
-                     style="max-width: 605px; min-width: 325px;" 
-                     data-embed-from="oembed" 
-                     data-embed-type="video">
-            <section>
-                <a target="_blank" title="@tiktok" href="{url}"></a>
-            </section>
-        </blockquote>
-        <script async src="https://www.tiktok.com/embed.js"></script>
-        '''
+    if not video_id:
+        logger.warning(f"Could not extract video ID from {url}, using fallback")
+        # Fallback for URLs without video ID
+        return f'''<blockquote class="tiktok-embed" cite="{url}" style="max-width: 605px;min-width: 325px;" > <section> <a target="_blank" title="TikTok" href="{url}">View on TikTok</a> </section> </blockquote> <script async src="https://www.tiktok.com/embed.js"></script>'''
+    
+    # Build username link - use extracted username or fallback
+    if username:
+        username_link = f'<a target="_blank" title="@{username}" href="https://www.tiktok.com/@{username}?refer=embed">@{username}</a>'
     else:
-        # For short links or URLs without video ID, use the full URL
-        embed_html = f'''
-        <blockquote class="tiktok-embed" cite="{url}" 
-                     style="max-width: 605px; min-width: 325px;" 
-                     data-embed-from="oembed" 
-                     data-embed-type="video">
-            <section>
-                <a target="_blank" title="@tiktok" href="{url}"></a>
-            </section>
-        </blockquote>
-        <script async src="https://www.tiktok.com/embed.js"></script>
-        '''
+        # Try to extract from URL path as fallback
+        try:
+            parsed = urllib.parse.urlparse(url)
+            path_parts = [p for p in parsed.path.split('/') if p]
+            for i, part in enumerate(path_parts):
+                if part.startswith('@'):
+                    username = part[1:]  # Remove @
+                    username_link = f'<a target="_blank" title="@{username}" href="https://www.tiktok.com/@{username}?refer=embed">@{username}</a>'
+                    break
+            else:
+                username_link = f'<a target="_blank" title="TikTok" href="{url}">TikTok</a>'
+        except:
+            username_link = f'<a target="_blank" title="TikTok" href="{url}">TikTok</a>'
+    
+    # Build embed HTML using the exact structure provided
+    embed_html = f'''<blockquote class="tiktok-embed" cite="{url}" data-video-id="{video_id}" style="max-width: 605px;min-width: 325px;" > <section> {username_link} <p></p> </section> </blockquote> <script async src="https://www.tiktok.com/embed.js"></script>'''
     
     return embed_html
 
