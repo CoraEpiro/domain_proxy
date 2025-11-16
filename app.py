@@ -430,6 +430,26 @@ def render_current_mode_dashboard():
                             if shown >= 3:
                                 break
 
+                # Always show recent videos regardless of thresholds (last 7 days with links)
+                st.markdown("### Recent TikTok Videos (last 7 days)")
+                import streamlit.components.v1 as components
+                recent_days = sorted(date_to_urls.keys())[-7:]
+                if not recent_days:
+                    st.caption("No TikTok links found in the selected sheet.")
+                else:
+                    for d in recent_days:
+                        urls = date_to_urls.get(d, [])[:3]
+                        if not urls:
+                            continue
+                        st.markdown(f"**{pd.to_datetime(d).strftime('%Y-%m-%d')}**")
+                        for url in urls:
+                            vid = parse_tiktok_video_id(url)
+                            if vid:
+                                components.iframe(get_tiktok_embed_url(vid), height=640, scrolling=False)
+                            else:
+                                embed_html = f'''<blockquote class="tiktok-embed" cite="{url}" data-video-id="" style="max-width: 605px;min-width: 325px;"><section></section></blockquote><script async src="https://www.tiktok.com/embed.js"></script>'''
+                                components.html(embed_html, height=700, scrolling=False)
+
 
 def render_historical_dashboard():
     """Render dashboard for historical mode."""
