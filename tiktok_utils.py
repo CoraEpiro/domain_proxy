@@ -416,6 +416,85 @@ def load_current_views_data_from_google_sheets(url: str) -> pd.DataFrame:
         if not parsed:
             return pd.DataFrame()
         
+
+def extract_tiktok_urls_from_row(row: pd.Series) -> list[str]:
+    """Scan a row for TikTok URLs."""
+    urls: list[str] = []
+    for value in row:
+        if isinstance(value, str):
+            matches = re.findall(r"https?://(?:www\\.)?(?:vm\\.)?tiktok\\.com/[^\\s,]+", value)
+            urls.extend(matches)
+    # Deduplicate while preserving order
+    seen = set()
+    deduped = []
+    for u in urls:
+        if u not in seen:
+            seen.add(u)
+            deduped.append(u)
+    return deduped
+
+
+def parse_tiktok_video_id(url: str) -> Optional[str]:
+    """Extract TikTok numeric video id from standard URLs like /video/<id>.
+    Returns None for short redirect links where id cannot be parsed.
+    """
+    try:
+        # Normalize
+        parsed = urllib.parse.urlparse(url)
+        path = parsed.path or ""
+        m = re.search(r"/video/(\\d+)", path)
+        if m:
+            return m.group(1)
+        return None
+    except Exception:
+        return None
+
+
+def get_tiktok_embed_url(video_id: str) -> str:
+    """Build TikTok embed URL for a given video id."""
+    return f"https://www.tiktok.com/embed/v2/video/{video_id}"
+
+
+def get_date_to_tiktok_urls_from_google_sheets(url: str) -> dict:
+    """Return mapping of date (pd.Timestamp normalized to day) -> list of TikTok URLs found in that row.
+    Reads the same Google Sheet structure as load_current_views_data_from_google_sheets.
+    """
+    mapping: dict = {}
+    try:
+        parsed = parse_google_sheets_url(url)
+        if not parsed:
+            return mapping
+        csv_url = get_google_sheets_csv_url(parsed["sheet_id"], parsed.get("gid"))
+        df_raw = pd.read_csv(csv_url, header=4)
+        df_raw.columns = df_raw.columns.str.strip()
+
+        # Detect date column
+        date_col = None
+        for col in df_raw.columns:
+            if col.strip().lower() in ["date", "dates"]:
+                date_col = col
+                break
+        if date_col is None:
+            date_col = df_raw.columns[0]
+
+        # Iterate rows and collect URLs
+        for _, row in df_raw.iterrows():
+            date_val = row.get(date_col)
+            parsed_date = _parse_tiktok_dates(pd.Series([date_val])).iloc[0]
+            if pd.isna(parsed_date):
+                continue
+            urls = extract_tiktok_urls_from_row(row)
+            if not urls:
+                continue
+            day = pd.to_datetime(parsed_date).normalize()
+            existing = mapping.get(day, [])
+            for u in urls:
+                if u not in existing:
+                    existing.append(u)
+            mapping[day] = existing
+        return mapping
+    except Exception:
+        return mapping
         # Convert to CSV export URL
         csv_url = get_google_sheets_csv_url(parsed["sheet_id"], parsed.get("gid"))
         

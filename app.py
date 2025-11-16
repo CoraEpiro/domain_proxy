@@ -8,6 +8,9 @@ from tiktok_utils import (
     load_current_views_data,
     load_current_views_data_from_google_sheets,
     parse_google_sheets_url,
+    get_date_to_tiktok_urls_from_google_sheets,
+    parse_tiktok_video_id,
+    get_tiktok_embed_url,
     create_views_vs_bsr_chart,
     create_views_line_chart,
     create_bsr_line_chart,
@@ -301,6 +304,60 @@ def render_current_mode_dashboard():
                     "N/A",
                     help="Add BSR values to compute the correlation.",
                 )
+
+            # Highlight potentially impactful TikTok videos (Google Sheets only)
+            if st.session_state.use_google_sheets:
+                st.markdown("### Potentially Impactful TikTok Videos")
+                with st.expander("Filter criteria", expanded=False):
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        min_views = st.number_input("Minimum views for consideration", min_value=0, value=5000, step=500)
+                    with col_b:
+                        min_bsr_improvement = st.number_input(
+                            "Minimum BSR improvement (absolute decrease)", min_value=0, value=10, step=5,
+                            help="Improvement is yesterday's BSR minus today's BSR; positive values mean better rank."
+                        )
+
+                # Build daily aggregates including day-over-day BSR change
+                daily = (
+                    df.groupby(df["date"].dt.floor("D"))
+                    .agg({"total_views": "sum", "BSR Amazon": "mean"})
+                    .reset_index()
+                    .sort_values("date")
+                )
+                daily["prev_bsr"] = daily["BSR Amazon"].shift(1)
+                daily["bsr_improvement"] = (daily["prev_bsr"] - daily["BSR Amazon"]).fillna(0)
+
+                # Load TikTok URLs per date from Google Sheets
+                date_to_urls = get_date_to_tiktok_urls_from_google_sheets(
+                    st.session_state.current_views_google_sheets_url
+                )
+
+                candidates = daily[
+                    (daily["total_views"] >= min_views) & (daily["bsr_improvement"] >= min_bsr_improvement)
+                ]
+
+                if candidates.empty:
+                    st.caption("No dates match the current thresholds.")
+                else:
+                    import streamlit.components.v1 as components
+                    for _, row in candidates.iterrows():
+                        day = pd.to_datetime(row["date"]).normalize()
+                        urls = date_to_urls.get(day, [])
+                        if not urls:
+                            continue
+                        st.markdown(f"**{pd.to_datetime(day).strftime('%Y-%m-%d')}** — Views: {int(row['total_views']):,}, BSR Δ: {int(row['bsr_improvement'])}")
+                        # Show up to first 3 embeds for that day
+                        shown = 0
+                        for url in urls:
+                            vid = parse_tiktok_video_id(url)
+                            if not vid:
+                                continue
+                            embed_url = get_tiktok_embed_url(vid)
+                            components.iframe(embed_url, height=640, scrolling=False)
+                            shown += 1
+                            if shown >= 3:
+                                break
 
 
 def render_historical_dashboard():
