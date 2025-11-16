@@ -415,7 +415,68 @@ def load_current_views_data_from_google_sheets(url: str) -> pd.DataFrame:
         parsed = parse_google_sheets_url(url)
         if not parsed:
             return pd.DataFrame()
-        
+        # Convert to CSV export URL
+        csv_url = get_google_sheets_csv_url(parsed["sheet_id"], parsed.get("gid"))
+        # Read CSV from Google Sheets (skip first 4 rows; 5th row is headers)
+        df_raw = pd.read_csv(csv_url, header=4)
+        df_raw.columns = df_raw.columns.str.strip()
+        # Detect date column
+        date_col = None
+        for col in df_raw.columns:
+            if col.strip().lower() in ["date", "dates"]:
+                date_col = col
+                break
+        if date_col is None:
+            date_col = df_raw.columns[0]
+        # Parse dates and views
+        dates = _parse_tiktok_dates(df_raw[date_col])
+        views_sum_col = None
+        for col in df_raw.columns:
+            if col.strip().lower() == "views sum":
+                views_sum_col = col
+                break
+        if views_sum_col:
+            total_views = pd.to_numeric(
+                df_raw[views_sum_col].astype(str).str.replace(r"[^\d.-]", "", regex=True),
+                errors="coerce",
+            )
+        else:
+            view_cols = [col for col in df_raw.columns if "view" in col.lower() and col != date_col]
+            if view_cols:
+                numeric_cols = df_raw[view_cols].apply(
+                    lambda col: pd.to_numeric(
+                        col.astype(str).str.replace(r"[^\d.-]", "", regex=True), errors="coerce"
+                    )
+                )
+                total_views = numeric_cols.sum(axis=1, skipna=True)
+            else:
+                total_views = pd.Series([0] * len(df_raw), dtype=float)
+        # Build dataframe and merge manual BSR
+        df = pd.DataFrame()
+        df["date"] = dates
+        df["total_views"] = total_views
+        manual_bsr = load_manual_bsr_entries()
+        df["BSR Amazon"] = None
+        for entry in manual_bsr:
+            entry_date = pd.to_datetime(entry["date"])
+            mask = df["date"].dt.date == entry_date.date()
+            if mask.any():
+                df.loc[mask, "BSR Amazon"] = entry["bsr"]
+            else:
+                new_row = pd.DataFrame({
+                    "date": [entry_date],
+                    "total_views": [0],
+                    "BSR Amazon": [entry["bsr"]],
+                })
+                df = pd.concat([df, new_row], ignore_index=True)
+        df = df.dropna(subset=["date"])
+        df = df[df["total_views"].notna() | df["BSR Amazon"].notna()]
+        df = df.sort_values("date")
+        return df[["date", "total_views", "BSR Amazon"]]
+    except Exception as e:
+        # Return empty dataframe on any error
+        return pd.DataFrame()
+
 
 def extract_tiktok_urls_from_row(row: pd.Series) -> list[str]:
     """Scan a row for TikTok URLs."""
@@ -495,81 +556,3 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str) -> dict:
         return mapping
     except Exception:
         return mapping
-        # Convert to CSV export URL
-        csv_url = get_google_sheets_csv_url(parsed["sheet_id"], parsed.get("gid"))
-        
-        # Read CSV from Google Sheets
-        # Google Sheets CSV export has the data starting from row 5 (index 4) based on the structure
-        # Row 4 has "Sum >>", Row 5 has headers, Row 6+ has data
-        df_raw = pd.read_csv(csv_url, header=4)  # Skip first 4 rows, use row 5 as header
-        df_raw.columns = df_raw.columns.str.strip()
-        
-        # Find date column
-        date_col = None
-        for col in df_raw.columns:
-            if col.strip().lower() in ["date", "dates"]:
-                date_col = col
-                break
-        
-        if date_col is None:
-            # Try first column as date
-            date_col = df_raw.columns[0]
-        
-        # Parse dates
-        dates = _parse_tiktok_dates(df_raw[date_col])
-        
-        # Find "Views Sum" column (based on the Google Sheets structure)
-        views_sum_col = None
-        for col in df_raw.columns:
-            if col.strip().lower() == "views sum":
-                views_sum_col = col
-                break
-        
-        if views_sum_col:
-            total_views = pd.to_numeric(
-                df_raw[views_sum_col].astype(str).str.replace(r"[^\d.-]", "", regex=True),
-                errors="coerce",
-            )
-        else:
-            # Fallback: look for any view columns and sum them
-            view_cols = [col for col in df_raw.columns if "view" in col.lower() and col != date_col]
-            if view_cols:
-                numeric_cols = df_raw[view_cols].apply(
-                    lambda col: pd.to_numeric(
-                        col.astype(str).str.replace(r"[^\d.-]", "", regex=True), errors="coerce"
-                    )
-                )
-                total_views = numeric_cols.sum(axis=1, skipna=True)
-            else:
-                total_views = pd.Series([0] * len(df_raw), dtype=float)
-        
-        df = pd.DataFrame()
-        df["date"] = dates
-        df["total_views"] = total_views
-        
-        # Load manual BSR entries
-        manual_bsr = load_manual_bsr_entries()
-        
-        # Merge manual BSR entries
-        df["BSR Amazon"] = None
-        for entry in manual_bsr:
-            entry_date = pd.to_datetime(entry["date"])
-            mask = df["date"].dt.date == entry_date.date()
-            if mask.any():
-                df.loc[mask, "BSR Amazon"] = entry["bsr"]
-            else:
-                # Add new row if date doesn't exist
-                new_row = pd.DataFrame({
-                    "date": [entry_date],
-                    "total_views": [0],
-                    "BSR Amazon": [entry["bsr"]]
-                })
-                df = pd.concat([df, new_row], ignore_index=True)
-        
-        df = df.dropna(subset=["date"])
-        df = df[df["total_views"].notna() | df["BSR Amazon"].notna()]
-        df = df.sort_values("date")
-        return df[["date", "total_views", "BSR Amazon"]]
-    except Exception as e:
-        # Return empty dataframe on any error
-        return pd.DataFrame()
