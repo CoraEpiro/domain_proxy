@@ -1,7 +1,7 @@
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 import shutil
 import json
@@ -546,7 +546,12 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
         logger.info(f"Downloaded {len(content)} bytes")
         
         # IMPORTANT: Don't use data_only=True - it strips hyperlinks!
-        wb = load_workbook(BytesIO(content), data_only=False)
+        # Try with keep_links=True if available (openpyxl 3.1+)
+        try:
+            wb = load_workbook(BytesIO(content), data_only=False, keep_links=True)
+        except TypeError:
+            # Older openpyxl versions don't have keep_links
+            wb = load_workbook(BytesIO(content), data_only=False)
         logger.info(f"Workbook loaded. Sheet names: {wb.sheetnames}")
 
         # If a specific sheet is requested, try it first
