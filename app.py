@@ -201,29 +201,7 @@ def render_current_mode_dashboard():
         else:
             render_bsr_edit_modal()
 
-    # Add backup/restore for BSR entries for persistence across updates
-    with st.expander("💾 Backup/Restore BSR Entries"):
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("Download BSR JSON"):
-                import json
-                entries = load_manual_bsr_entries()
-                st.download_button("Save File", data=json.dumps(entries, indent=2), file_name="manual_bsr_entries.json", mime="application/json", use_container_width=True)
-        with c2:
-            uploaded = st.file_uploader("Restore from JSON", type=["json"])
-            if uploaded is not None:
-                import json, os
-                try:
-                    data = json.load(uploaded)
-                    # overwrite file directly
-                    from tiktok_utils import BSR_MANUAL_ENTRIES_PATH
-                    BSR_MANUAL_ENTRIES_PATH.parent.mkdir(parents=True, exist_ok=True)
-                    with open(BSR_MANUAL_ENTRIES_PATH, "w") as f:
-                        json.dump(data, f, indent=2)
-                    st.success("BSR entries restored.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Failed to restore: {e}")
+    # Persistence is automatic via SQLite (no manual backup UI)
     
     # Load current data
     if st.session_state.use_google_sheets:
@@ -508,11 +486,11 @@ def render_historical_dashboard():
     corr_df = df[["total_views", "BSR Amazon"]].apply(pd.to_numeric, errors="coerce").dropna()
     if not corr_df.empty:
         correlation = corr_df["total_views"].corr(-corr_df["BSR Amazon"])
-        st.metric(
-            "Correlation (Views vs BSR improvement)",
-            f"{correlation:.2f}",
-            help="Positive correlation indicates higher TikTok views correspond with better (lower) BSR values.",
-        )
+    st.metric(
+        "Correlation (Views vs BSR improvement)",
+        f"{correlation:.2f}",
+        help="Positive correlation indicates higher TikTok views correspond with better (lower) BSR values.",
+    )
     else:
         st.metric(
             "Correlation (Views vs BSR improvement)",
