@@ -601,24 +601,54 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
             # Iterate rows after header, collect date + any TikTok hyperlinks in the row
             rows_processed = 0
             hyperlinks_found = 0
+            total_cells_checked = 0
+            
+            # First, let's check what hyperlinks exist in the sheet
+            logger.info(f"Checking for hyperlinks in sheet {ws.title}...")
+            all_hyperlinks = []
+            for r in range(1, min(ws.max_row + 1, 50)):
+                for c in range(1, min(ws.max_column + 1, 30)):
+                    try:
+                        cell = ws.cell(r, c)
+                        hl = getattr(cell, "hyperlink", None)
+                        if hl:
+                            target = getattr(hl, "target", None)
+                            if target:
+                                all_hyperlinks.append((r, c, target))
+                                logger.info(f"Found hyperlink at Row {r}, Col {chr(64+c)} ({c}): {target}")
+                    except:
+                        pass
+            
+            logger.info(f"Total hyperlinks found in first 50 rows: {len(all_hyperlinks)}")
+            
             for r in range(header_row_idx + 1, ws.max_row + 1):
                 date_cell = ws.cell(r, date_col_idx)
                 date_val = date_cell.value
                 if date_val is None or str(date_val).strip() == "":
                     # likely end of data
                     continue
-                parsed_date = _parse_tiktok_dates(pd.Series([date_val])).iloc[0]
-                if pd.isna(parsed_date):
-                    logger.debug(f"Row {r}: Could not parse date '{date_val}'")
+                
+                # Try parsing the date
+                try:
+                    parsed_date = _parse_tiktok_dates(pd.Series([date_val])).iloc[0]
+                    if pd.isna(parsed_date):
+                        logger.debug(f"Row {r}: Could not parse date '{date_val}' (type: {type(date_val)})")
+                        continue
+                    day = pd.to_datetime(parsed_date).normalize()
+                    rows_processed += 1
+                except Exception as e:
+                    logger.debug(f"Row {r}: Error parsing date '{date_val}': {e}")
                     continue
-                day = pd.to_datetime(parsed_date).normalize()
-                rows_processed += 1
 
                 urls_for_row: list[str] = []
-                # Scan ALL columns for hyperlinks (not just first 60)
+                # Scan ALL columns for hyperlinks
                 for c in range(1, ws.max_column + 1):
+                    total_cells_checked += 1
                     try:
                         cell = ws.cell(r, c)
+                        cell_val = cell.value
+                        
+                        # Check hyperlink attribute
                         hl = getattr(cell, "hyperlink", None)
                         if hl:
                             target = getattr(hl, "target", None)
@@ -626,7 +656,15 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
                                 if "tiktok.com" in target.lower():
                                     urls_for_row.append(target)
                                     hyperlinks_found += 1
-                                    logger.info(f"Row {r}, Col {chr(64+c)} ({c}): Found TikTok link: {target}")
+                                    logger.info(f"Row {r}, Col {chr(64+c)} ({c}): Found TikTok link via hyperlink: {target}")
+                        
+                        # Also check if cell value itself is a URL
+                        if cell_val and isinstance(cell_val, str):
+                            if "tiktok.com" in cell_val.lower():
+                                urls_for_row.append(cell_val)
+                                hyperlinks_found += 1
+                                logger.info(f"Row {r}, Col {chr(64+c)} ({c}): Found TikTok link in cell value: {cell_val}")
+                                
                     except Exception as e:
                         logger.debug(f"Error reading cell {r},{c}: {e}")
                         continue
@@ -639,7 +677,7 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
                     mapping[day] = existing
                     logger.info(f"Date {day}: Added {len(urls_for_row)} TikTok URL(s)")
             
-            logger.info(f"Sheet {ws.title}: Processed {rows_processed} rows, found {hyperlinks_found} TikTok hyperlinks")
+            logger.info(f"Sheet {ws.title}: Processed {rows_processed} rows, checked {total_cells_checked} cells, found {hyperlinks_found} TikTok hyperlinks")
 
             # If we populated mapping from this sheet, we can stop
             if mapping:
