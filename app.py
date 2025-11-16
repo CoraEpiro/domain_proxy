@@ -351,11 +351,6 @@ def render_current_mode_dashboard():
                     sheet_name=sheet_name,
                 )
                 logger.info(f"Extracted URLs for {len(date_to_urls)} dates")
-                if date_to_urls:
-                    for d, urls in date_to_urls.items():
-                        st.write(f"DEBUG: {d} -> {len(urls)} URLs")
-                else:
-                    st.warning("DEBUG: No TikTok URLs found. Check logs above.")
 
                 candidates = daily[
                     (daily["total_views"] >= min_views) & (daily["bsr_improvement"] >= min_bsr_improvement)
@@ -381,8 +376,16 @@ def render_current_mode_dashboard():
                         if pick:
                             import streamlit.components.v1 as components
                             urls = date_to_urls.get(pd.to_datetime(pick).normalize(), [])
-                            shown = 0
+                            # Deduplicate URLs for this date
+                            seen = set()
+                            unique_urls = []
                             for url in urls:
+                                if url not in seen:
+                                    seen.add(url)
+                                    unique_urls.append(url)
+                            
+                            shown = 0
+                            for url in unique_urls:
                                 st.markdown(f"🔗 [Watch on TikTok]({url})")
                                 embed_html = get_tiktok_oembed_html(url)
                                 # Wrap in a container div with proper iframe sandbox permissions
