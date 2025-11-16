@@ -338,7 +338,7 @@ def render_current_mode_dashboard():
                 ]
 
                 if candidates.empty:
-                    st.caption("No dates match the current thresholds.")
+                    st.caption("No dates match the current thresholds. Try lowering the minimums above.")
                 else:
                     import streamlit.components.v1 as components
                     for _, row in candidates.iterrows():
@@ -351,10 +351,19 @@ def render_current_mode_dashboard():
                         shown = 0
                         for url in urls:
                             vid = parse_tiktok_video_id(url)
-                            if not vid:
-                                continue
-                            embed_url = get_tiktok_embed_url(vid)
-                            components.iframe(embed_url, height=640, scrolling=False)
+                            if vid:
+                                # Use direct iframe when we have a numeric video id
+                                embed_url = get_tiktok_embed_url(vid)
+                                components.iframe(embed_url, height=640, scrolling=False)
+                            else:
+                                # Fallback: use TikTok official embed snippet with the raw URL (works for vm.tiktok.com too)
+                                embed_html = f'''
+                                <blockquote class="tiktok-embed" cite="{url}" data-video-id="" style="max-width: 605px;min-width: 325px;">
+                                  <section></section>
+                                </blockquote>
+                                <script async src="https://www.tiktok.com/embed.js"></script>
+                                '''
+                                components.html(embed_html, height=700, scrolling=False)
                             shown += 1
                             if shown >= 3:
                                 break
