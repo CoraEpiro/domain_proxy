@@ -564,12 +564,13 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
                 candidate_sheets.append(ws)
         logger.info(f"Processing {len(candidate_sheets)} sheet(s)")
 
-        # Heuristics: pick the first sheet (or specified one) that contains a header row with 'Date'
+        # Heuristics: pick the first sheet (or specified one) that contains dates
         for ws in candidate_sheets:
             logger.info(f"Processing sheet: {ws.title}, max_row={ws.max_row}, max_column={ws.max_column}")
             date_col_idx = None
             header_row_idx = None
-            # scan first 20 rows to find header
+            
+            # First, try to find explicit "Date" header
             for r in range(1, min(ws.max_row, 20) + 1):
                 row_vals = [str(ws.cell(r, c).value).strip().lower() if ws.cell(r, c).value is not None else "" for c in range(1, min(ws.max_column, 60) + 1)]
                 if any(val == "date" or val == "dates" for val in row_vals):
@@ -579,10 +580,23 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
                             date_col_idx = c
                             break
                     break
+            
+            # If no explicit Date header, assume dates are in column A (first column)
             if header_row_idx is None or date_col_idx is None:
-                logger.warning(f"No 'Date' header found in sheet {ws.title}")
-                continue
-            logger.info(f"Found Date header at row {header_row_idx}, column {date_col_idx}")
+                logger.info(f"No explicit 'Date' header found, assuming dates in column A")
+                date_col_idx = 1  # Column A
+                # Try to find header row by looking for common headers like "Views", "Likes", etc.
+                for r in range(1, min(ws.max_row, 10) + 1):
+                    row_vals = [str(ws.cell(r, c).value).strip().lower() if ws.cell(r, c).value is not None else "" for c in range(1, min(ws.max_column, 60) + 1)]
+                    if any(val in ("views", "likes", "comments", "shares") for val in row_vals):
+                        header_row_idx = r
+                        break
+                # If still no header row found, assume data starts at row 2
+                if header_row_idx is None:
+                    header_row_idx = 1
+                    logger.info(f"No header row found, assuming data starts at row {header_row_idx + 1}")
+            
+            logger.info(f"Using Date column: {date_col_idx}, Header row: {header_row_idx}")
 
             # Iterate rows after header, collect date + any TikTok hyperlinks in the row
             rows_processed = 0
@@ -601,17 +615,21 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
                 rows_processed += 1
 
                 urls_for_row: list[str] = []
-                # Scan across reasonable number of columns for hyperlinks
-                for c in range(1, min(ws.max_column, 60) + 1):
-                    cell = ws.cell(r, c)
-                    hl = getattr(cell, "hyperlink", None)
-                    if hl:
-                        target = getattr(hl, "target", None)
-                        if target:
-                            if "tiktok.com" in target:
-                                urls_for_row.append(target)
-                                hyperlinks_found += 1
-                                logger.info(f"Row {r}, Col {c}: Found TikTok link: {target}")
+                # Scan ALL columns for hyperlinks (not just first 60)
+                for c in range(1, ws.max_column + 1):
+                    try:
+                        cell = ws.cell(r, c)
+                        hl = getattr(cell, "hyperlink", None)
+                        if hl:
+                            target = getattr(hl, "target", None)
+                            if target:
+                                if "tiktok.com" in target.lower():
+                                    urls_for_row.append(target)
+                                    hyperlinks_found += 1
+                                    logger.info(f"Row {r}, Col {chr(64+c)} ({c}): Found TikTok link: {target}")
+                    except Exception as e:
+                        logger.debug(f"Error reading cell {r},{c}: {e}")
+                        continue
 
                 if urls_for_row:
                     existing = mapping.get(day, [])
