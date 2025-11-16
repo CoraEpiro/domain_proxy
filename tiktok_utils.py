@@ -526,29 +526,47 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
     """Return mapping of date (pd.Timestamp normalized to day) -> list of TikTok URLs found on that row.
     IMPORTANT: We use the XLSX export so we can read real cell hyperlinks (CSV loses links).
     """
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    
     mapping: dict = {}
     try:
         parsed = parse_google_sheets_url(url)
         if not parsed:
+            logger.warning("Failed to parse Google Sheets URL")
             return mapping
+        logger.info(f"Parsed sheet_id: {parsed['sheet_id']}, gid: {parsed.get('gid')}")
+        
         # Download XLSX
         xlsx_url = f"https://docs.google.com/spreadsheets/d/{parsed['sheet_id']}/export?format=xlsx"
+        logger.info(f"Downloading XLSX from: {xlsx_url}")
         with urllib.request.urlopen(xlsx_url) as resp:
             content = resp.read()
+        logger.info(f"Downloaded {len(content)} bytes")
+        
         # IMPORTANT: Don't use data_only=True - it strips hyperlinks!
         wb = load_workbook(BytesIO(content), data_only=False)
+        logger.info(f"Workbook loaded. Sheet names: {wb.sheetnames}")
 
         # If a specific sheet is requested, try it first
         candidate_sheets = []
-        if sheet_name and sheet_name in wb.sheetnames:
-            candidate_sheets.append(wb[sheet_name])
+        if sheet_name:
+            logger.info(f"Looking for sheet: {sheet_name}")
+            if sheet_name in wb.sheetnames:
+                candidate_sheets.append(wb[sheet_name])
+                logger.info(f"Found requested sheet: {sheet_name}")
+            else:
+                logger.warning(f"Sheet '{sheet_name}' not found. Available: {wb.sheetnames}")
         # Add remaining sheets
         for ws in wb.worksheets:
             if ws not in candidate_sheets:
                 candidate_sheets.append(ws)
+        logger.info(f"Processing {len(candidate_sheets)} sheet(s)")
 
         # Heuristics: pick the first sheet (or specified one) that contains a header row with 'Date'
         for ws in candidate_sheets:
+            logger.info(f"Processing sheet: {ws.title}, max_row={ws.max_row}, max_column={ws.max_column}")
             date_col_idx = None
             header_row_idx = None
             # scan first 20 rows to find header
@@ -562,9 +580,13 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
                             break
                     break
             if header_row_idx is None or date_col_idx is None:
+                logger.warning(f"No 'Date' header found in sheet {ws.title}")
                 continue
+            logger.info(f"Found Date header at row {header_row_idx}, column {date_col_idx}")
 
             # Iterate rows after header, collect date + any TikTok hyperlinks in the row
+            rows_processed = 0
+            hyperlinks_found = 0
             for r in range(header_row_idx + 1, ws.max_row + 1):
                 date_cell = ws.cell(r, date_col_idx)
                 date_val = date_cell.value
@@ -573,18 +595,23 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
                     continue
                 parsed_date = _parse_tiktok_dates(pd.Series([date_val])).iloc[0]
                 if pd.isna(parsed_date):
+                    logger.debug(f"Row {r}: Could not parse date '{date_val}'")
                     continue
                 day = pd.to_datetime(parsed_date).normalize()
+                rows_processed += 1
 
                 urls_for_row: list[str] = []
                 # Scan across reasonable number of columns for hyperlinks
                 for c in range(1, min(ws.max_column, 60) + 1):
                     cell = ws.cell(r, c)
                     hl = getattr(cell, "hyperlink", None)
-                    if hl and getattr(hl, "target", None):
-                        target = hl.target
-                        if "tiktok.com" in target:
-                            urls_for_row.append(target)
+                    if hl:
+                        target = getattr(hl, "target", None)
+                        if target:
+                            if "tiktok.com" in target:
+                                urls_for_row.append(target)
+                                hyperlinks_found += 1
+                                logger.info(f"Row {r}, Col {c}: Found TikTok link: {target}")
 
                 if urls_for_row:
                     existing = mapping.get(day, [])
@@ -592,13 +619,19 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
                         if u not in existing:
                             existing.append(u)
                     mapping[day] = existing
+                    logger.info(f"Date {day}: Added {len(urls_for_row)} TikTok URL(s)")
+            
+            logger.info(f"Sheet {ws.title}: Processed {rows_processed} rows, found {hyperlinks_found} TikTok hyperlinks")
 
             # If we populated mapping from this sheet, we can stop
             if mapping:
+                logger.info(f"Found {len(mapping)} dates with TikTok links in sheet {ws.title}")
                 break
 
+        logger.info(f"Final mapping: {len(mapping)} dates with TikTok URLs")
         return mapping
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error extracting TikTok URLs: {e}", exc_info=True)
         return mapping
 
 

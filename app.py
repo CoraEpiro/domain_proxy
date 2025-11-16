@@ -341,10 +341,20 @@ def render_current_mode_dashboard():
 
                 # Load TikTok URLs per date from Google Sheets (xlsx hyperlinks)
                 sheet_name = st.session_state.get("current_views_sheet_name") or None
+                import logging
+                logging.basicConfig(level=logging.INFO)
+                logger = logging.getLogger(__name__)
+                logger.info(f"Extracting TikTok URLs from sheet: {sheet_name}")
                 date_to_urls = get_date_to_tiktok_urls_from_google_sheets(
                     st.session_state.current_views_google_sheets_url,
                     sheet_name=sheet_name,
                 )
+                logger.info(f"Extracted URLs for {len(date_to_urls)} dates")
+                if date_to_urls:
+                    for d, urls in date_to_urls.items():
+                        st.write(f"DEBUG: {d} -> {len(urls)} URLs")
+                else:
+                    st.warning("DEBUG: No TikTok URLs found. Check logs above.")
 
                 candidates = daily[
                     (daily["total_views"] >= min_views) & (daily["bsr_improvement"] >= min_bsr_improvement)
