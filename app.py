@@ -24,6 +24,8 @@ from tiktok_utils import (
     get_file_modification_time,
 )
 
+APP_VERSION = "2025-11-16-1"
+
 st.set_page_config(
     page_title="True Sea Moss Performance Dashboard",
     page_icon="📈",
