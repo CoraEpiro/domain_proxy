@@ -383,6 +383,7 @@ def render_current_mode_dashboard():
                             urls = date_to_urls.get(pd.to_datetime(pick).normalize(), [])
                             shown = 0
                             for url in urls:
+                                st.markdown(f"🔗 [Watch on TikTok]({url})")
                                 embed_html = get_tiktok_oembed_html(url)
                                 # Wrap in a container div for better styling
                                 full_html = f'''
@@ -405,6 +406,7 @@ def render_current_mode_dashboard():
                         # Show up to first 3 embeds for that day
                         shown = 0
                         for url in urls:
+                            st.markdown(f"🔗 [Watch on TikTok]({url})")
                             embed_html = get_tiktok_oembed_html(url)
                             # Wrap in a container div for better styling
                             full_html = f'''
@@ -430,6 +432,7 @@ def render_current_mode_dashboard():
                             continue
                         st.markdown(f"**{pd.to_datetime(d).strftime('%Y-%m-%d')}**")
                         for url in urls:
+                            st.markdown(f"🔗 [Watch on TikTok]({url})")
                             embed_html = get_tiktok_oembed_html(url)
                             # Wrap in a container div for better styling
                             full_html = f'''
