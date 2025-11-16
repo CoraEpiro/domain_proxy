@@ -520,7 +520,7 @@ def get_tiktok_embed_url(video_id: str) -> str:
     return f"https://www.tiktok.com/embed/v2/video/{video_id}"
 
 
-def get_date_to_tiktok_urls_from_google_sheets(url: str) -> dict:
+def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[str] = None) -> dict:
     """Return mapping of date (pd.Timestamp normalized to day) -> list of TikTok URLs found on that row.
     IMPORTANT: We use the XLSX export so we can read real cell hyperlinks (CSV loses links).
     """
@@ -535,8 +535,17 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str) -> dict:
             content = resp.read()
         wb = load_workbook(BytesIO(content), data_only=True)
 
-        # Heuristics: pick the first sheet that contains a header row with 'Date'
+        # If a specific sheet is requested, try it first
+        candidate_sheets = []
+        if sheet_name and sheet_name in wb.sheetnames:
+            candidate_sheets.append(wb[sheet_name])
+        # Add remaining sheets
         for ws in wb.worksheets:
+            if ws not in candidate_sheets:
+                candidate_sheets.append(ws)
+
+        # Heuristics: pick the first sheet (or specified one) that contains a header row with 'Date'
+        for ws in candidate_sheets:
             date_col_idx = None
             header_row_idx = None
             # scan first 20 rows to find header

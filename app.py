@@ -11,8 +11,6 @@ from tiktok_utils import (
     get_date_to_tiktok_urls_from_google_sheets,
     parse_tiktok_video_id,
     get_tiktok_embed_url,
-    load_manual_tiktok_links,
-    save_manual_tiktok_links,
     merge_with_manual_tiktok_links,
     create_views_vs_bsr_chart,
     create_views_line_chart,
@@ -96,9 +94,15 @@ def render_current_mode_dashboard():
                 value=st.session_state.current_views_google_sheets_url,
                 help="Paste the Google Sheets shareable link"
             )
+            sheet_name_input = st.text_input(
+                "Sheet name (tab) to read from",
+                value=st.session_state.get("current_views_sheet_name", "WorkinOn"),
+                help="Optional. If set, links are extracted from this tab."
+            )
             if st.button("Save Google Sheets URL"):
                 if parse_google_sheets_url(google_sheets_url):
                     st.session_state.current_views_google_sheets_url = google_sheets_url
+                    st.session_state.current_views_sheet_name = sheet_name_input or "WorkinOn"
                     st.success("✅ Google Sheets URL saved!")
                     st.rerun()
                 else:
@@ -197,23 +201,29 @@ def render_current_mode_dashboard():
         else:
             render_bsr_edit_modal()
 
-    # Manage manual TikTok links
-    with st.expander("🎬 Manage Manual TikTok Links"):
-        st.caption("If the Google Sheet CSV export strips hyperlinks, paste TikTok video URLs here.")
-        col_a, col_b = st.columns([2, 3])
-        with col_a:
-            links_date = st.date_input("Date for links")
-        with col_b:
-            urls_text = st.text_area("TikTok URLs (one per line)", height=120, placeholder="https://www.tiktok.com/@user/video/1234567890\nhttps://vm.tiktok.com/xxxx/")
-        if st.button("Save Links"):
-            date_str = links_date.strftime("%Y-%m-%d")
-            urls = [u.strip() for u in urls_text.splitlines() if u.strip()]
-            if urls:
-                if save_manual_tiktok_links(date_str, urls):
-                    st.success(f"Saved {len(urls)} link(s) for {date_str}")
+    # Add backup/restore for BSR entries for persistence across updates
+    with st.expander("💾 Backup/Restore BSR Entries"):
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Download BSR JSON"):
+                import json
+                entries = load_manual_bsr_entries()
+                st.download_button("Save File", data=json.dumps(entries, indent=2), file_name="manual_bsr_entries.json", mime="application/json", use_container_width=True)
+        with c2:
+            uploaded = st.file_uploader("Restore from JSON", type=["json"])
+            if uploaded is not None:
+                import json, os
+                try:
+                    data = json.load(uploaded)
+                    # overwrite file directly
+                    from tiktok_utils import BSR_MANUAL_ENTRIES_PATH
+                    BSR_MANUAL_ENTRIES_PATH.parent.mkdir(parents=True, exist_ok=True)
+                    with open(BSR_MANUAL_ENTRIES_PATH, "w") as f:
+                        json.dump(data, f, indent=2)
+                    st.success("BSR entries restored.")
                     st.rerun()
-            else:
-                st.info("Add at least one URL.")
+                except Exception as e:
+                    st.error(f"Failed to restore: {e}")
     
     # Load current data
     if st.session_state.use_google_sheets:
@@ -349,11 +359,12 @@ def render_current_mode_dashboard():
                 daily["prev_bsr"] = daily["BSR Amazon"].shift(1)
                 daily["bsr_improvement"] = (daily["prev_bsr"] - daily["BSR Amazon"]).fillna(0)
 
-                # Load TikTok URLs per date from Google Sheets and merge manual links
+                # Load TikTok URLs per date from Google Sheets (xlsx hyperlinks)
+                sheet_name = st.session_state.get("current_views_sheet_name") or None
                 date_to_urls = get_date_to_tiktok_urls_from_google_sheets(
-                    st.session_state.current_views_google_sheets_url
+                    st.session_state.current_views_google_sheets_url,
+                    sheet_name=sheet_name,
                 )
-                date_to_urls = merge_with_manual_tiktok_links(date_to_urls)
 
                 candidates = daily[
                     (daily["total_views"] >= min_views) & (daily["bsr_improvement"] >= min_bsr_improvement)
