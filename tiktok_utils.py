@@ -606,20 +606,30 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
             # First, let's check what hyperlinks exist in the sheet
             logger.info(f"Checking for hyperlinks in sheet {ws.title}...")
             all_hyperlinks = []
+            all_formulas = []
             for r in range(1, min(ws.max_row + 1, 50)):
                 for c in range(1, min(ws.max_column + 1, 30)):
                     try:
                         cell = ws.cell(r, c)
+                        # Check hyperlink attribute
                         hl = getattr(cell, "hyperlink", None)
                         if hl:
                             target = getattr(hl, "target", None)
                             if target:
                                 all_hyperlinks.append((r, c, target))
                                 logger.info(f"Found hyperlink at Row {r}, Col {chr(64+c)} ({c}): {target}")
-                    except:
+                        # Check formula
+                        if hasattr(cell, 'formula') and cell.formula:
+                            formula = str(cell.formula)
+                            if "HYPERLINK" in formula.upper():
+                                all_formulas.append((r, c, formula))
+                                logger.info(f"Found HYPERLINK formula at Row {r}, Col {chr(64+c)} ({c}): {formula}")
+                    except Exception as e:
+                        logger.debug(f"Error checking cell {r},{c}: {e}")
                         pass
             
             logger.info(f"Total hyperlinks found in first 50 rows: {len(all_hyperlinks)}")
+            logger.info(f"Total HYPERLINK formulas found in first 50 rows: {len(all_formulas)}")
             
             for r in range(header_row_idx + 1, ws.max_row + 1):
                 date_cell = ws.cell(r, date_col_idx)
@@ -648,7 +658,7 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
                         cell = ws.cell(r, c)
                         cell_val = cell.value
                         
-                        # Check hyperlink attribute
+                        # Check hyperlink attribute (for actual hyperlink objects)
                         hl = getattr(cell, "hyperlink", None)
                         if hl:
                             target = getattr(hl, "target", None)
@@ -658,12 +668,34 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
                                     hyperlinks_found += 1
                                     logger.info(f"Row {r}, Col {chr(64+c)} ({c}): Found TikTok link via hyperlink: {target}")
                         
-                        # Also check if cell value itself is a URL
+                        # Check cell formula for HYPERLINK() function
+                        if hasattr(cell, 'formula') and cell.formula:
+                            formula = str(cell.formula)
+                            if "HYPERLINK" in formula.upper() and "TIKTOK" in formula.upper():
+                                # Extract URL from HYPERLINK formula: HYPERLINK("url", "text")
+                                import re
+                                match = re.search(r'HYPERLINK\(["\']([^"\']+)["\']', formula, re.IGNORECASE)
+                                if match:
+                                    url = match.group(1)
+                                    if "tiktok.com" in url.lower():
+                                        urls_for_row.append(url)
+                                        hyperlinks_found += 1
+                                        logger.info(f"Row {r}, Col {chr(64+c)} ({c}): Found TikTok link via HYPERLINK formula: {url}")
+                        
+                        # Check if cell value itself is a URL
                         if cell_val and isinstance(cell_val, str):
                             if "tiktok.com" in cell_val.lower():
                                 urls_for_row.append(cell_val)
                                 hyperlinks_found += 1
                                 logger.info(f"Row {r}, Col {chr(64+c)} ({c}): Found TikTok link in cell value: {cell_val}")
+                        
+                        # Also check cell comment (sometimes URLs are in comments)
+                        if hasattr(cell, 'comment') and cell.comment:
+                            comment_text = str(cell.comment.text)
+                            if "tiktok.com" in comment_text.lower():
+                                urls_for_row.append(comment_text)
+                                hyperlinks_found += 1
+                                logger.info(f"Row {r}, Col {chr(64+c)} ({c}): Found TikTok link in comment: {comment_text}")
                                 
                     except Exception as e:
                         logger.debug(f"Error reading cell {r},{c}: {e}")
