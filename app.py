@@ -410,14 +410,14 @@ def render_current_mode_dashboard():
                             if shown >= 3:
                                 break
 
-                # Always show recent videos regardless of thresholds (last 7 days with links)
-                st.markdown("### Recent TikTok Videos (last 7 days)")
+                # Show all videos from the dataset (all dates with links)
+                st.markdown("### TikTok Videos")
                 import streamlit.components.v1 as components
-                recent_days = sorted(date_to_urls.keys())[-7:]
-                if not recent_days:
+                all_days = sorted(date_to_urls.keys())
+                if not all_days:
                     st.caption("No TikTok links found in the selected sheet.")
                 else:
-                    for d in recent_days:
+                    for d in all_days:
                         urls = date_to_urls.get(d, [])[:3]
                         if not urls:
                             continue
@@ -488,11 +488,11 @@ def render_historical_dashboard():
     corr_df = df[["total_views", "BSR Amazon"]].apply(pd.to_numeric, errors="coerce").dropna()
     if not corr_df.empty:
         correlation = corr_df["total_views"].corr(-corr_df["BSR Amazon"])
-        st.metric(
-            "Correlation (Views vs BSR improvement)",
-            f"{correlation:.2f}",
-            help="Positive correlation indicates higher TikTok views correspond with better (lower) BSR values.",
-        )
+    st.metric(
+        "Correlation (Views vs BSR improvement)",
+        f"{correlation:.2f}",
+        help="Positive correlation indicates higher TikTok views correspond with better (lower) BSR values.",
+    )
     else:
         st.metric(
             "Correlation (Views vs BSR improvement)",
