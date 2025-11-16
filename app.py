@@ -24,7 +24,7 @@ from tiktok_utils import (
     get_file_modification_time,
 )
 
-APP_VERSION = "2025-11-16-1"
+APP_VERSION = "2025-11-16-2"
 
 st.set_page_config(
     page_title="True Sea Moss Performance Dashboard",
@@ -498,7 +498,7 @@ def render_historical_dashboard():
             "Correlation (Views vs BSR improvement)",
             "N/A",
             help="Correlation requires both Views and BSR values.",
-        )
+    )
 
 
 def main():
