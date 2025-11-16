@@ -593,11 +593,11 @@ def render_historical_dashboard():
     corr_df = df[["total_views", "BSR Amazon"]].apply(pd.to_numeric, errors="coerce").dropna()
     if not corr_df.empty:
         correlation = corr_df["total_views"].corr(-corr_df["BSR Amazon"])
-    st.metric(
+        st.metric(
         "Correlation (Views vs BSR improvement)",
         f"{correlation:.2f}",
         help="Positive correlation indicates higher TikTok views correspond with better (lower) BSR values.",
-    )
+        )
     else:
         st.metric(
             "Correlation (Views vs BSR improvement)",
