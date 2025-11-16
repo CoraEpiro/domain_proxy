@@ -535,7 +535,8 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
         xlsx_url = f"https://docs.google.com/spreadsheets/d/{parsed['sheet_id']}/export?format=xlsx"
         with urllib.request.urlopen(xlsx_url) as resp:
             content = resp.read()
-        wb = load_workbook(BytesIO(content), data_only=True)
+        # IMPORTANT: Don't use data_only=True - it strips hyperlinks!
+        wb = load_workbook(BytesIO(content), data_only=False)
 
         # If a specific sheet is requested, try it first
         candidate_sheets = []

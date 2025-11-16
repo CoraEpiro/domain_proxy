@@ -98,13 +98,13 @@ def render_current_mode_dashboard():
             )
             sheet_name_input = st.text_input(
                 "Sheet name (tab) to read from",
-                value=st.session_state.get("current_views_sheet_name", "WorkinOn"),
-                help="Optional. If set, links are extracted from this tab."
+                value=st.session_state.get("current_views_sheet_name", "Core"),
+                help="Optional. If set, links are extracted from this tab. Default: Core"
             )
             if st.button("Save Google Sheets URL"):
                 if parse_google_sheets_url(google_sheets_url):
                     st.session_state.current_views_google_sheets_url = google_sheets_url
-                    st.session_state.current_views_sheet_name = sheet_name_input or "WorkinOn"
+                    st.session_state.current_views_sheet_name = sheet_name_input or "Core"
                     st.success("✅ Google Sheets URL saved!")
                     st.rerun()
                 else:
