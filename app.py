@@ -11,6 +11,9 @@ from tiktok_utils import (
     get_date_to_tiktok_urls_from_google_sheets,
     parse_tiktok_video_id,
     get_tiktok_embed_url,
+    load_manual_tiktok_links,
+    save_manual_tiktok_links,
+    merge_with_manual_tiktok_links,
     create_views_vs_bsr_chart,
     create_views_line_chart,
     create_bsr_line_chart,
@@ -193,6 +196,24 @@ def render_current_mode_dashboard():
             render_bsr_edit_modal(edit_entry["date"], edit_entry["bsr"])
         else:
             render_bsr_edit_modal()
+
+    # Manage manual TikTok links
+    with st.expander("🎬 Manage Manual TikTok Links"):
+        st.caption("If the Google Sheet CSV export strips hyperlinks, paste TikTok video URLs here.")
+        col_a, col_b = st.columns([2, 3])
+        with col_a:
+            links_date = st.date_input("Date for links")
+        with col_b:
+            urls_text = st.text_area("TikTok URLs (one per line)", height=120, placeholder="https://www.tiktok.com/@user/video/1234567890\nhttps://vm.tiktok.com/xxxx/")
+        if st.button("Save Links"):
+            date_str = links_date.strftime("%Y-%m-%d")
+            urls = [u.strip() for u in urls_text.splitlines() if u.strip()]
+            if urls:
+                if save_manual_tiktok_links(date_str, urls):
+                    st.success(f"Saved {len(urls)} link(s) for {date_str}")
+                    st.rerun()
+            else:
+                st.info("Add at least one URL.")
     
     # Load current data
     if st.session_state.use_google_sheets:
@@ -328,10 +349,11 @@ def render_current_mode_dashboard():
                 daily["prev_bsr"] = daily["BSR Amazon"].shift(1)
                 daily["bsr_improvement"] = (daily["prev_bsr"] - daily["BSR Amazon"]).fillna(0)
 
-                # Load TikTok URLs per date from Google Sheets
+                # Load TikTok URLs per date from Google Sheets and merge manual links
                 date_to_urls = get_date_to_tiktok_urls_from_google_sheets(
                     st.session_state.current_views_google_sheets_url
                 )
+                date_to_urls = merge_with_manual_tiktok_links(date_to_urls)
 
                 candidates = daily[
                     (daily["total_views"] >= min_views) & (daily["bsr_improvement"] >= min_bsr_improvement)
@@ -339,6 +361,35 @@ def render_current_mode_dashboard():
 
                 if candidates.empty:
                     st.caption("No dates match the current thresholds. Try lowering the minimums above.")
+                    # Diagnostic: show URL counts per day
+                    diag = []
+                    for _, r in daily.iterrows():
+                        d = pd.to_datetime(r["date"]).normalize()
+                        diag.append({
+                            "Date": pd.to_datetime(d).strftime("%Y-%m-%d"),
+                            "Views": int(r["total_views"]) if pd.notna(r["total_views"]) else 0,
+                            "BSR": int(r["BSR Amazon"]) if pd.notna(r["BSR Amazon"]) else None,
+                            "URLs": len(date_to_urls.get(d, [])),
+                        })
+                    st.dataframe(pd.DataFrame(diag), use_container_width=True, hide_index=True)
+                    # Optional: let user pick any date with URLs to preview embeds
+                    dates_with_urls = [k for k, v in date_to_urls.items() if v]
+                    if dates_with_urls:
+                        pick = st.selectbox("Preview videos for a date (ignores thresholds)", options=[pd.to_datetime(d).strftime("%Y-%m-%d") for d in dates_with_urls])
+                        if pick:
+                            import streamlit.components.v1 as components
+                            urls = date_to_urls.get(pd.to_datetime(pick).normalize(), [])
+                            shown = 0
+                            for url in urls:
+                                vid = parse_tiktok_video_id(url)
+                                if vid:
+                                    components.iframe(get_tiktok_embed_url(vid), height=640, scrolling=False)
+                                else:
+                                    embed_html = f'''<blockquote class="tiktok-embed" cite="{url}" data-video-id="" style="max-width: 605px;min-width: 325px;"><section></section></blockquote><script async src="https://www.tiktok.com/embed.js"></script>'''
+                                    components.html(embed_html, height=700, scrolling=False)
+                                shown += 1
+                                if shown >= 3:
+                                    break
                 else:
                     import streamlit.components.v1 as components
                     for _, row in candidates.iterrows():

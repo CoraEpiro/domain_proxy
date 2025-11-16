@@ -21,6 +21,7 @@ TIKTOK_FALLBACK_PATH = REFERENCE_DATA_DIR / TIKTOK_FILENAME
 CURRENT_VIEWS_FILENAME = "current_views.csv"
 CURRENT_VIEWS_PATH = DATA_DIR / CURRENT_VIEWS_FILENAME
 BSR_MANUAL_ENTRIES_PATH = DATA_DIR / "manual_bsr_entries.json"
+MANUAL_TIKTOK_LINKS_PATH = DATA_DIR / "manual_tiktok_links.json"
 
 
 def _ensure_dataset(csv_path: Path) -> Path:
@@ -556,3 +557,55 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str) -> dict:
         return mapping
     except Exception:
         return mapping
+
+
+# ---------- Manual TikTok links storage ----------
+def load_manual_tiktok_links() -> dict:
+    """Load manual TikTok links mapping: { 'YYYY-MM-DD': [url, ...] }"""
+    try:
+        if not MANUAL_TIKTOK_LINKS_PATH.exists():
+            return {}
+        with open(MANUAL_TIKTOK_LINKS_PATH, "r") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+            return {}
+    except Exception:
+        return {}
+
+
+def save_manual_tiktok_links(date_str: str, urls: list[str]) -> bool:
+    """Save or merge manual TikTok links for a specific date (YYYY-MM-DD)."""
+    try:
+        data = load_manual_tiktok_links()
+        existing = data.get(date_str, [])
+        # Merge unique while preserving order
+        seen = set(existing)
+        for u in urls:
+            if u and u not in seen:
+                existing.append(u)
+                seen.add(u)
+        data[date_str] = existing
+        MANUAL_TIKTOK_LINKS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(MANUAL_TIKTOK_LINKS_PATH, "w") as f:
+            json.dump(data, f, indent=2)
+        return True
+    except Exception:
+        return False
+
+
+def merge_with_manual_tiktok_links(date_to_urls: dict) -> dict:
+    """Merge Google Sheets URL mapping with manually-added links."""
+    merged = {**date_to_urls}
+    manual = load_manual_tiktok_links()
+    for date_str, urls in manual.items():
+        try:
+            day = pd.to_datetime(date_str).normalize()
+        except Exception:
+            continue
+        current = merged.get(day, [])
+        for u in urls:
+            if u not in current:
+                current.append(u)
+        merged[day] = current
+    return merged
