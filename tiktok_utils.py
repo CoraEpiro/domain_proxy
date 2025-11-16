@@ -661,88 +661,116 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
             logger.info(f"Total hyperlinks found in first 50 rows: {len(all_hyperlinks)}")
             logger.info(f"Total HYPERLINK formulas found in first 50 rows: {len(all_formulas)}")
             
+            # NEW APPROACH: Each Views column represents ONE video
+            # Map: column_index -> TikTok URL (extracted from that column)
+            column_to_url: dict[int, str] = {}
+            
+            # First, identify which columns are "Views" columns
+            views_columns = []
+            for c in range(1, ws.max_column + 1):
+                try:
+                    # Check header row for "Views" label
+                    header_cell = ws.cell(header_row_idx, c)
+                    header_val = str(header_cell.value).strip().lower() if header_cell.value else ""
+                    if "view" in header_val and "sum" not in header_val:
+                        views_columns.append(c)
+                        logger.info(f"Found Views column at column {chr(64+c)} ({c})")
+                except:
+                    pass
+            
+            # For each Views column, extract the TikTok URL from the first data row
+            for col_idx in views_columns:
+                url_found = None
+                # Check first few data rows for hyperlink in this column
+                for r in range(header_row_idx + 1, min(header_row_idx + 10, ws.max_row + 1)):
+                    try:
+                        cell = ws.cell(r, col_idx)
+                        
+                        # Check hyperlink attribute
+                        hl = getattr(cell, "hyperlink", None)
+                        if hl:
+                            target = getattr(hl, "target", None)
+                            if target and "tiktok.com" in target.lower():
+                                url_found = target
+                                logger.info(f"Column {chr(64+col_idx)} ({col_idx}): Found TikTok URL in row {r}: {url_found}")
+                                break
+                        
+                        # Check formula
+                        if hasattr(cell, 'formula') and cell.formula:
+                            formula = str(cell.formula)
+                            if "HYPERLINK" in formula.upper():
+                                match = re.search(r'HYPERLINK\(["\']([^"\']+)["\']', formula, re.IGNORECASE)
+                                if match:
+                                    url = match.group(1)
+                                    if "tiktok.com" in url.lower():
+                                        url_found = url
+                                        logger.info(f"Column {chr(64+col_idx)} ({col_idx}): Found TikTok URL via formula in row {r}: {url_found}")
+                                        break
+                        
+                        # Check cell value
+                        cell_val = cell.value
+                        if cell_val and isinstance(cell_val, str) and "tiktok.com" in cell_val.lower():
+                            url_found = cell_val
+                            logger.info(f"Column {chr(64+col_idx)} ({col_idx}): Found TikTok URL in cell value row {r}: {url_found}")
+                            break
+                            
+                    except Exception as e:
+                        logger.debug(f"Error checking column {col_idx}, row {r}: {e}")
+                        continue
+                
+                if url_found:
+                    column_to_url[col_idx] = url_found
+                    logger.info(f"Mapped column {chr(64+col_idx)} ({col_idx}) -> {url_found}")
+            
+            logger.info(f"Found {len(column_to_url)} video columns with TikTok URLs")
+            
+            # Now iterate through data rows and map dates to videos based on which columns have data
             for r in range(header_row_idx + 1, ws.max_row + 1):
                 date_cell = ws.cell(r, date_col_idx)
                 date_val = date_cell.value
                 if date_val is None or str(date_val).strip() == "":
-                    # likely end of data
                     continue
                 
-                # Try parsing the date - handle both string and datetime objects
+                # Parse the date
                 try:
-                    # If it's already a datetime/date object, use it directly
                     if isinstance(date_val, (pd.Timestamp, datetime, date)):
                         day = pd.to_datetime(date_val).normalize()
                     else:
                         parsed_date = _parse_tiktok_dates(pd.Series([date_val])).iloc[0]
                         if pd.isna(parsed_date):
-                            logger.debug(f"Row {r}: Could not parse date '{date_val}' (type: {type(date_val)})")
                             continue
                         day = pd.to_datetime(parsed_date).normalize()
                     rows_processed += 1
-                    logger.debug(f"Row {r}: Parsed date '{date_val}' -> {day}")
                 except Exception as e:
-                    logger.warning(f"Row {r}: Error parsing date '{date_val}' (type: {type(date_val)}): {e}")
                     continue
 
-                urls_for_row: list[str] = []
-                # Scan ALL columns for hyperlinks
-                for c in range(1, ws.max_column + 1):
-                    total_cells_checked += 1
+                # For this date, find which Views columns have non-zero values
+                urls_for_date = []
+                for col_idx, url in column_to_url.items():
                     try:
-                        cell = ws.cell(r, c)
+                        cell = ws.cell(r, col_idx)
                         cell_val = cell.value
-                        
-                        # Check hyperlink attribute (for actual hyperlink objects)
-                        hl = getattr(cell, "hyperlink", None)
-                        if hl:
-                            target = getattr(hl, "target", None)
-                            if target:
-                                if "tiktok.com" in target.lower():
-                                    urls_for_row.append(target)
-                                    hyperlinks_found += 1
-                                    logger.info(f"Row {r}, Col {chr(64+c)} ({c}): Found TikTok link via hyperlink: {target}")
-                        
-                        # Check cell formula for HYPERLINK() function
-                        if hasattr(cell, 'formula') and cell.formula:
-                            formula = str(cell.formula)
-                            if "HYPERLINK" in formula.upper() and "TIKTOK" in formula.upper():
-                                # Extract URL from HYPERLINK formula: HYPERLINK("url", "text")
-                                import re
-                                match = re.search(r'HYPERLINK\(["\']([^"\']+)["\']', formula, re.IGNORECASE)
-                                if match:
-                                    url = match.group(1)
-                                    if "tiktok.com" in url.lower():
-                                        urls_for_row.append(url)
-                                        hyperlinks_found += 1
-                                        logger.info(f"Row {r}, Col {chr(64+c)} ({c}): Found TikTok link via HYPERLINK formula: {url}")
-                        
-                        # Check if cell value itself is a URL
-                        if cell_val and isinstance(cell_val, str):
-                            if "tiktok.com" in cell_val.lower():
-                                urls_for_row.append(cell_val)
-                                hyperlinks_found += 1
-                                logger.info(f"Row {r}, Col {chr(64+c)} ({c}): Found TikTok link in cell value: {cell_val}")
-                        
-                        # Also check cell comment (sometimes URLs are in comments)
-                        if hasattr(cell, 'comment') and cell.comment:
-                            comment_text = str(cell.comment.text)
-                            if "tiktok.com" in comment_text.lower():
-                                urls_for_row.append(comment_text)
-                                hyperlinks_found += 1
-                                logger.info(f"Row {r}, Col {chr(64+c)} ({c}): Found TikTok link in comment: {comment_text}")
-                                
-                    except Exception as e:
-                        logger.debug(f"Error reading cell {r},{c}: {e}")
-                        continue
+                        # Check if this cell has a value (views > 0 or has hyperlink)
+                        if cell_val is not None:
+                            # Try to parse as number
+                            try:
+                                views = float(cell_val)
+                                if views > 0:
+                                    urls_for_date.append(url)
+                            except:
+                                # Not a number, but cell has content - include it
+                                if str(cell_val).strip():
+                                    urls_for_date.append(url)
+                    except:
+                        pass
 
-                if urls_for_row:
+                if urls_for_date:
                     existing = mapping.get(day, [])
-                    for u in urls_for_row:
+                    for u in urls_for_date:
                         if u not in existing:
                             existing.append(u)
                     mapping[day] = existing
-                    logger.info(f"Date {day}: Added {len(urls_for_row)} TikTok URL(s)")
+                    logger.debug(f"Date {day}: Added {len(urls_for_date)} TikTok URL(s) from {len(column_to_url)} video columns")
             
             logger.info(f"Sheet {ws.title}: Processed {rows_processed} rows, checked {total_cells_checked} cells, found {hyperlinks_found} TikTok hyperlinks")
 
