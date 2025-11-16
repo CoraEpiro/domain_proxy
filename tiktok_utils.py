@@ -660,10 +660,76 @@ def _init_db():
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
-                \"\"\"\n                CREATE TABLE IF NOT EXISTS manual_bsr (\n                    date TEXT PRIMARY KEY,\n                    bsr REAL\n                )\n                \"\"\"\n            )
+                """
+                CREATE TABLE IF NOT EXISTS manual_bsr (
+                    date TEXT PRIMARY KEY,
+                    bsr REAL
+                )
+                """
+            )
             # Migrate from JSON once if table is empty and JSON exists
-            cur = conn.execute(\"SELECT COUNT(*) FROM manual_bsr\")
+            cur = conn.execute("SELECT COUNT(*) FROM manual_bsr")
             count = cur.fetchone()[0] or 0
-            if count == 0 and BSR_MANUAL_ENTRIES_PATH.exists():\n                try:\n                    with open(BSR_MANUAL_ENTRIES_PATH, \"r\") as f:\n                        data = json.load(f)\n                        if isinstance(data, list):\n                            for entry in data:\n                                d = entry.get(\"date\")\n                                b = entry.get(\"bsr\")\n                                if d is not None and b is not None:\n                                    conn.execute(\n                                        \"INSERT OR REPLACE INTO manual_bsr(date, bsr) VALUES(?, ?)\",\n                                        (str(d), float(b)),\n                                    )\n                            conn.commit()\n                except Exception:\n                    pass\n    except Exception:\n        pass\n+
+            if count == 0 and BSR_MANUAL_ENTRIES_PATH.exists():
+                try:
+                    with open(BSR_MANUAL_ENTRIES_PATH, "r") as f:
+                        data = json.load(f)
+                        if isinstance(data, list):
+                            for entry in data:
+                                d = entry.get("date")
+                                b = entry.get("bsr")
+                                if d is not None and b is not None:
+                                    conn.execute(
+                                        "INSERT OR REPLACE INTO manual_bsr(date, bsr) VALUES(?, ?)",
+                                        (str(d), float(b)),
+                                    )
+                            conn.commit()
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
-def load_manual_bsr_entries() -> list:\n    \"\"\"Load manual BSR entries from SQLite (migrates JSON if needed).\"\"\"\n    _init_db()\n    try:\n        with sqlite3.connect(DB_PATH) as conn:\n            rows = conn.execute(\"SELECT date, bsr FROM manual_bsr ORDER BY date\").fetchall()\n            return [{\"date\": r[0], \"bsr\": float(r[1]) if r[1] is not None else None} for r in rows]\n    except Exception:\n        # Fallback to JSON (legacy)\n        if not BSR_MANUAL_ENTRIES_PATH.exists():\n            return []\n        try:\n            with open(BSR_MANUAL_ENTRIES_PATH, \"r\") as f:\n                return json.load(f)\n        except Exception:\n            return []\n+\n+\n+def save_manual_bsr_entry(date: str, bsr: float) -> bool:\n+    \"\"\"Upsert a manual BSR entry into SQLite.\"\"\"\n+    _init_db()\n+    try:\n+        with sqlite3.connect(DB_PATH) as conn:\n+            conn.execute(\n+                \"INSERT OR REPLACE INTO manual_bsr(date, bsr) VALUES(?, ?)\",\n+                (str(date), float(bsr)),\n+            )\n+            conn.commit()\n+        return True\n+    except Exception:\n+        return False\n+\n+\n+def delete_manual_bsr_entry(date: str) -> bool:\n+    \"\"\"Delete a manual BSR entry from SQLite.\"\"\"\n+    _init_db()\n+    try:\n+        with sqlite3.connect(DB_PATH) as conn:\n+            conn.execute(\"DELETE FROM manual_bsr WHERE date = ?\", (str(date),))\n+            conn.commit()\n+        return True\n+    except Exception:\n+        return False
+
+def load_manual_bsr_entries() -> list:
+    """Load manual BSR entries from SQLite (migrates JSON if needed)."""
+    _init_db()
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            rows = conn.execute("SELECT date, bsr FROM manual_bsr ORDER BY date").fetchall()
+            return [{"date": r[0], "bsr": float(r[1]) if r[1] is not None else None} for r in rows]
+    except Exception:
+        # Fallback to JSON (legacy)
+        if not BSR_MANUAL_ENTRIES_PATH.exists():
+            return []
+        try:
+            with open(BSR_MANUAL_ENTRIES_PATH, "r") as f:
+                return json.load(f)
+        except Exception:
+            return []
+
+
+def save_manual_bsr_entry(date: str, bsr: float) -> bool:
+    """Upsert a manual BSR entry into SQLite."""
+    _init_db()
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO manual_bsr(date, bsr) VALUES(?, ?)",
+                (str(date), float(bsr)),
+            )
+            conn.commit()
+        return True
+    except Exception:
+        return False
+
+
+def delete_manual_bsr_entry(date: str) -> bool:
+    """Delete a manual BSR entry from SQLite."""
+    _init_db()
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("DELETE FROM manual_bsr WHERE date = ?", (str(date),))
+            conn.commit()
+        return True
+    except Exception:
+        return False
