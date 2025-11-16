@@ -401,27 +401,30 @@ def render_current_mode_dashboard():
                                     break
                 else:
                     import streamlit.components.v1 as components
+                    seen_all = set()  # Track all videos shown across all dates
                     for _, row in candidates.iterrows():
                         day = pd.to_datetime(row["date"]).normalize()
                         urls = date_to_urls.get(day, [])
                         if not urls:
                             continue
                         st.markdown(f"**{pd.to_datetime(day).strftime('%Y-%m-%d')}** — Views: {int(row['total_views']):,}, BSR Δ: {int(row['bsr_improvement'])}")
-                        # Show up to first 3 embeds for that day
+                        # Show up to first 3 unique embeds for that day
                         shown = 0
                         for url in urls:
-                            st.markdown(f"🔗 [Watch on TikTok]({url})")
-                            embed_html = get_tiktok_oembed_html(url)
-                            # Wrap in a container div for better styling
-                            full_html = f'''
-                            <div style="display: flex; justify-content: center; margin: 20px 0;">
-                                {embed_html}
-                            </div>
-                            '''
-                            components.html(full_html, height=800, scrolling=False)
-                            shown += 1
-                            if shown >= 3:
-                                break
+                            if url not in seen_all:
+                                seen_all.add(url)
+                                st.markdown(f"🔗 [Watch on TikTok]({url})")
+                                embed_html = get_tiktok_oembed_html(url)
+                                # Wrap in a container div for better styling
+                                full_html = f'''
+                                <div style="display: flex; justify-content: center; margin: 20px 0; width: 100%;">
+                                    {embed_html}
+                                </div>
+                                '''
+                                components.html(full_html, height=800, scrolling=False)
+                                shown += 1
+                                if shown >= 3:
+                                    break
 
                 # Show all videos from the dataset (all dates with links)
                 st.markdown("### TikTok Videos")
