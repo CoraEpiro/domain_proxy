@@ -358,7 +358,7 @@ def render_current_mode_dashboard():
 
                 if candidates.empty:
                     st.caption("No dates match the current thresholds. Try lowering the minimums above.")
-                    # Diagnostic: show URL counts per day
+                    # Diagnostic: show data per day (without URL counts)
                     diag = []
                     for _, r in daily.iterrows():
                         d = pd.to_datetime(r["date"]).normalize()
@@ -366,7 +366,6 @@ def render_current_mode_dashboard():
                             "Date": pd.to_datetime(d).strftime("%Y-%m-%d"),
                             "Views": int(r["total_views"]) if pd.notna(r["total_views"]) else 0,
                             "BSR": int(r["BSR Amazon"]) if pd.notna(r["BSR Amazon"]) else None,
-                            "URLs": len(date_to_urls.get(d, [])),
                         })
                     st.dataframe(pd.DataFrame(diag), use_container_width=True, hide_index=True)
                     # Optional: let user pick any date with URLs to preview embeds
@@ -386,15 +385,13 @@ def render_current_mode_dashboard():
                             
                             shown = 0
                             for url in unique_urls:
-                                st.markdown(f"🔗 [Watch on TikTok]({url})")
+                                # Embed video (no link above)
                                 embed_html = get_tiktok_oembed_html(url)
-                                # Wrap in a container div with proper iframe sandbox permissions
                                 full_html = f'''
                                 <div style="display: flex; justify-content: center; margin: 20px 0; width: 100%;">
                                     {embed_html}
                                 </div>
                                 '''
-                                # Use html component with proper height
                                 components.html(full_html, height=800, scrolling=False)
                                 shown += 1
                                 if shown >= 3:
@@ -413,9 +410,8 @@ def render_current_mode_dashboard():
                         for url in urls:
                             if url not in seen_all:
                                 seen_all.add(url)
-                                st.markdown(f"🔗 [Watch on TikTok]({url})")
+                                # Embed video (no link above)
                                 embed_html = get_tiktok_oembed_html(url)
-                                # Wrap in a container div for better styling
                                 full_html = f'''
                                 <div style="display: flex; justify-content: center; margin: 20px 0; width: 100%;">
                                     {embed_html}
