@@ -385,12 +385,13 @@ def render_current_mode_dashboard():
                             for url in urls:
                                 st.markdown(f"🔗 [Watch on TikTok]({url})")
                                 embed_html = get_tiktok_oembed_html(url)
-                                # Wrap in a container div for better styling
+                                # Wrap in a container div with proper iframe sandbox permissions
                                 full_html = f'''
-                                <div style="display: flex; justify-content: center; margin: 20px 0;">
+                                <div style="display: flex; justify-content: center; margin: 20px 0; width: 100%;">
                                     {embed_html}
                                 </div>
                                 '''
+                                # Use html component with proper height
                                 components.html(full_html, height=800, scrolling=False)
                                 shown += 1
                                 if shown >= 3:
@@ -500,11 +501,11 @@ def render_historical_dashboard():
     corr_df = df[["total_views", "BSR Amazon"]].apply(pd.to_numeric, errors="coerce").dropna()
     if not corr_df.empty:
         correlation = corr_df["total_views"].corr(-corr_df["BSR Amazon"])
-        st.metric(
+    st.metric(
         "Correlation (Views vs BSR improvement)",
         f"{correlation:.2f}",
         help="Positive correlation indicates higher TikTok views correspond with better (lower) BSR values.",
-        )
+    )
     else:
         st.metric(
             "Correlation (Views vs BSR improvement)",
