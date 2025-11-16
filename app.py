@@ -351,6 +351,14 @@ def render_current_mode_dashboard():
                     sheet_name=sheet_name,
                 )
                 logger.info(f"Extracted URLs for {len(date_to_urls)} dates")
+                
+                # Reverse mapping: URL -> list of dates (for video-based view)
+                url_to_dates = {}
+                for date, urls in date_to_urls.items():
+                    for url in urls:
+                        if url not in url_to_dates:
+                            url_to_dates[url] = []
+                        url_to_dates[url].append(date)
 
                 candidates = daily[
                     (daily["total_views"] >= min_views) & (daily["bsr_improvement"] >= min_bsr_improvement)
@@ -585,11 +593,11 @@ def render_historical_dashboard():
     corr_df = df[["total_views", "BSR Amazon"]].apply(pd.to_numeric, errors="coerce").dropna()
     if not corr_df.empty:
         correlation = corr_df["total_views"].corr(-corr_df["BSR Amazon"])
-        st.metric(
-            "Correlation (Views vs BSR improvement)",
-            f"{correlation:.2f}",
-            help="Positive correlation indicates higher TikTok views correspond with better (lower) BSR values.",
-        )
+    st.metric(
+        "Correlation (Views vs BSR improvement)",
+        f"{correlation:.2f}",
+        help="Positive correlation indicates higher TikTok views correspond with better (lower) BSR values.",
+    )
     else:
         st.metric(
             "Correlation (Views vs BSR improvement)",
