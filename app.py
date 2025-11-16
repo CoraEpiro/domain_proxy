@@ -426,24 +426,40 @@ def render_current_mode_dashboard():
                                 if shown >= 3:
                                     break
 
-                # Show all videos from the dataset (all dates with links)
+                # Show all videos from the dataset (all dates with links) - deduplicated
                 st.markdown("### TikTok Videos")
                 import streamlit.components.v1 as components
                 all_days = sorted(date_to_urls.keys())
                 if not all_days:
                     st.caption("No TikTok links found in the selected sheet.")
                 else:
+                    # Collect all unique URLs across all dates
+                    seen_urls = set()
+                    unique_videos = []  # List of (date, url) tuples
+                    
                     for d in all_days:
-                        urls = date_to_urls.get(d, [])[:3]
-                        if not urls:
-                            continue
-                        st.markdown(f"**{pd.to_datetime(d).strftime('%Y-%m-%d')}**")
+                        urls = date_to_urls.get(d, [])
                         for url in urls:
+                            if url not in seen_urls:
+                                seen_urls.add(url)
+                                unique_videos.append((d, url))
+                    
+                    if not unique_videos:
+                        st.caption("No TikTok links found in the selected sheet.")
+                    else:
+                        # Group by date for display
+                        current_date = None
+                        for d, url in unique_videos:
+                            date_str = pd.to_datetime(d).strftime('%Y-%m-%d')
+                            if date_str != current_date:
+                                st.markdown(f"**{date_str}**")
+                                current_date = date_str
+                            
                             st.markdown(f"🔗 [Watch on TikTok]({url})")
                             embed_html = get_tiktok_oembed_html(url)
                             # Wrap in a container div for better styling
                             full_html = f'''
-                            <div style="display: flex; justify-content: center; margin: 20px 0;">
+                            <div style="display: flex; justify-content: center; margin: 20px 0; width: 100%;">
                                 {embed_html}
                             </div>
                             '''
