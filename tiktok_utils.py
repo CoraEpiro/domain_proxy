@@ -155,6 +155,117 @@ def load_recent_core_data(csv_path: Path = RECENT_CORE_DATA_PATH) -> pd.DataFram
     return df.reset_index(drop=True)
 
 
+def _normalize_current_df(df: pd.DataFrame | None) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["date", "total_views", "BSR Amazon"])
+    normalized = pd.DataFrame()
+    normalized["date"] = pd.to_datetime(df.get("date"), errors="coerce")
+    normalized["total_views"] = pd.to_numeric(df.get("total_views"), errors="coerce")
+    normalized["BSR Amazon"] = pd.to_numeric(df.get("BSR Amazon"), errors="coerce")
+    normalized = normalized.dropna(subset=["date"])
+    return normalized
+
+
+def _core_to_current_frame(core_df: pd.DataFrame | None) -> pd.DataFrame:
+    if core_df is None or core_df.empty:
+        return pd.DataFrame(columns=["date", "total_views", "BSR Amazon"])
+
+    df = core_df.copy()
+    date_col = "Date" if "Date" in df.columns else df.columns[0]
+    df[date_col] = _parse_tiktok_dates(df[date_col])
+
+    if "Total Views" in df.columns:
+        views_series = pd.to_numeric(df["Total Views"], errors="coerce")
+    else:
+        view_cols = [
+            col for col in df.columns if isinstance(col, str) and "view" in col.lower()
+        ]
+        if view_cols:
+            views_series = (
+                df[view_cols]
+                .apply(pd.to_numeric, errors="coerce")
+                .sum(axis=1, skipna=True)
+            )
+        else:
+            views_series = pd.Series(pd.NA, index=df.index, dtype="float64")
+
+    bsr_col = next(
+        (col for col in df.columns if isinstance(col, str) and "bsr" in col.lower()),
+        None,
+    )
+    if bsr_col:
+        bsr_series = pd.to_numeric(df[bsr_col], errors="coerce")
+    else:
+        bsr_series = pd.Series(pd.NA, index=df.index, dtype="float64")
+
+    current = pd.DataFrame(
+        {
+            "date": pd.to_datetime(df[date_col], errors="coerce"),
+            "total_views": views_series,
+            "BSR Amazon": bsr_series,
+        }
+    )
+    current = current.dropna(subset=["date"])
+    return current
+
+
+def _apply_manual_bsr(
+    df: pd.DataFrame, manual_entries: list[dict] | None
+) -> pd.DataFrame:
+    manual_entries = manual_entries or []
+    result = df.copy()
+    if "BSR Amazon" not in result.columns:
+        result["BSR Amazon"] = pd.NA
+    if result.empty and not manual_entries:
+        return result
+
+    for entry in manual_entries:
+        entry_date = pd.to_datetime(entry.get("date"), errors="coerce")
+        if pd.isna(entry_date):
+            continue
+        entry_value = entry.get("bsr")
+        entry_value = float(entry_value) if entry_value is not None else None
+        mask = result["date"].dt.normalize() == entry_date.normalize()
+        if mask.any():
+            result.loc[mask, "BSR Amazon"] = entry_value
+        else:
+            new_row = pd.DataFrame(
+                {
+                    "date": [entry_date],
+                    "total_views": [0],
+                    "BSR Amazon": [entry_value],
+                }
+            )
+            result = pd.concat([result, new_row], ignore_index=True)
+    return result
+
+
+def create_current_dataset(
+    primary_df: pd.DataFrame | None,
+    core_df: pd.DataFrame | None,
+    manual_entries: list[dict] | None,
+) -> pd.DataFrame:
+    frames = []
+    normalized_primary = _normalize_current_df(primary_df)
+    if not normalized_primary.empty:
+        frames.append(normalized_primary)
+
+    core_frame = _core_to_current_frame(core_df)
+    if not core_frame.empty:
+        frames.append(core_frame)
+
+    if frames:
+        combined = pd.concat(frames, ignore_index=True)
+        combined = combined.sort_values("date")
+        combined = combined.drop_duplicates(subset="date", keep="last")
+    else:
+        combined = pd.DataFrame(columns=["date", "total_views", "BSR Amazon"])
+
+    combined = _apply_manual_bsr(combined, manual_entries)
+    combined = combined.sort_values("date")
+    return combined.reset_index(drop=True)
+
+
 def create_views_vs_bsr_chart(df: pd.DataFrame) -> go.Figure | None:
     if df.empty:
         return None
@@ -413,25 +524,8 @@ def load_current_views_data(csv_path: Path = CURRENT_VIEWS_PATH) -> pd.DataFrame
         df["date"] = dates
         df["total_views"] = total_views
         
-        # Load manual BSR entries
-        manual_bsr = load_manual_bsr_entries()
-        
-        # Merge manual BSR entries
-        df["BSR Amazon"] = None
-        for entry in manual_bsr:
-            entry_date = pd.to_datetime(entry["date"])
-            mask = df["date"].dt.date == entry_date.date()
-            if mask.any():
-                df.loc[mask, "BSR Amazon"] = entry["bsr"]
-            else:
-                # Add new row if date doesn't exist
-                new_row = pd.DataFrame({
-                    "date": [entry_date],
-                    "total_views": [0],
-                    "BSR Amazon": [entry["bsr"]]
-                })
-                df = pd.concat([df, new_row], ignore_index=True)
-        
+        if "BSR Amazon" not in df.columns:
+            df["BSR Amazon"] = pd.NA
         df = df.dropna(subset=["date"])
         df = df[df["total_views"].notna() | df["BSR Amazon"].notna()]
         df = df.sort_values("date")
@@ -538,9 +632,44 @@ def load_current_views_data_from_google_sheets(url: str) -> pd.DataFrame:
             return pd.DataFrame()
         # Convert to CSV export URL
         csv_url = get_google_sheets_csv_url(parsed["sheet_id"], parsed.get("gid"))
-        # Read CSV from Google Sheets (skip first 4 rows; 5th row is headers)
-        df_raw = pd.read_csv(csv_url, header=4)
-        df_raw.columns = df_raw.columns.str.strip()
+
+        def _has_date_column(frame: pd.DataFrame) -> bool:
+            return any(
+                isinstance(col, str) and col.strip().lower() in {"date", "dates"}
+                for col in frame.columns
+            )
+
+        df_raw = pd.DataFrame()
+        for header in (4, 0):
+            try:
+                candidate = pd.read_csv(csv_url, header=header)
+                candidate = candidate.dropna(how="all")
+                candidate.columns = candidate.columns.map(lambda c: str(c).strip())
+                if _has_date_column(candidate):
+                    df_raw = candidate
+                    break
+            except Exception:
+                continue
+
+        if df_raw.empty:
+            try:
+                raw = pd.read_csv(csv_url, header=None)
+                raw = raw.dropna(how="all")
+            except Exception:
+                return pd.DataFrame()
+            header_row_idx = None
+            for idx in range(min(15, len(raw))):
+                row = raw.iloc[idx].astype(str).str.strip().str.lower()
+                if "date" in row.values or "dates" in row.values:
+                    header_row_idx = idx
+                    break
+            if header_row_idx is None:
+                return pd.DataFrame()
+            header_row = raw.iloc[header_row_idx].astype(str).str.strip()
+            df_raw = raw.iloc[header_row_idx + 1 :].reset_index(drop=True)
+            df_raw.columns = header_row
+            df_raw = df_raw.dropna(how="all")
+            df_raw.columns = df_raw.columns.map(lambda c: str(c).strip())
         # Detect date column
         date_col = None
         for col in df_raw.columns:
@@ -576,20 +705,8 @@ def load_current_views_data_from_google_sheets(url: str) -> pd.DataFrame:
         df = pd.DataFrame()
         df["date"] = dates
         df["total_views"] = total_views
-        manual_bsr = load_manual_bsr_entries()
-        df["BSR Amazon"] = None
-        for entry in manual_bsr:
-            entry_date = pd.to_datetime(entry["date"])
-            mask = df["date"].dt.date == entry_date.date()
-            if mask.any():
-                df.loc[mask, "BSR Amazon"] = entry["bsr"]
-            else:
-                new_row = pd.DataFrame({
-                    "date": [entry_date],
-                    "total_views": [0],
-                    "BSR Amazon": [entry["bsr"]],
-                })
-                df = pd.concat([df, new_row], ignore_index=True)
+        if "BSR Amazon" not in df.columns:
+            df["BSR Amazon"] = pd.NA
         df = df.dropna(subset=["date"])
         df = df[df["total_views"].notna() | df["BSR Amazon"].notna()]
         df = df.sort_values("date")

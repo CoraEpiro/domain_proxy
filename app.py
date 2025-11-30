@@ -24,6 +24,7 @@ from tiktok_utils import (
     delete_manual_bsr_entry,
     get_file_modification_time,
     load_recent_core_data,
+    create_current_dataset,
     load_video_details_long,
     summarize_video_details,
     create_core_views_chart,
@@ -162,6 +163,9 @@ def render_current_mode_dashboard():
                 st.caption(f"💡 Default: `{CURRENT_VIEWS_PATH}`")
                 st.caption("💡 Tip: Your daily script should write to this file path")
     
+    # Load latest 7-day core CSV for merging and reporting
+    core_df = load_recent_core_data(RECENT_CORE_DATA_PATH)
+
     # Determine data source and load data
     if st.session_state.use_google_sheets:
         # Load from Google Sheets
@@ -216,17 +220,27 @@ def render_current_mode_dashboard():
     
     # Load current data
     if st.session_state.use_google_sheets:
-        df = load_current_views_data_from_google_sheets(st.session_state.current_views_google_sheets_url)
+        source_df = load_current_views_data_from_google_sheets(
+            st.session_state.current_views_google_sheets_url
+        )
     else:
-        df = load_current_views_data(current_file_path)
+        source_df = load_current_views_data(current_file_path)
+
+    df = create_current_dataset(source_df, core_df, manual_entries)
     
     if df.empty:
-        st.info(
-            f"📊 No current data found. Please:\n"
-            f"1. Upload a CSV file or configure the file path in 'Configure Data Source' above\n"
-            f"2. Use 'Add/Edit BSR' to manually add BSR values\n"
-            f"3. Your daily script should write to: `{current_file_path}`"
-        )
+        if st.session_state.use_google_sheets:
+            st.info(
+                "📊 No rows detected in the linked Google Sheet. "
+                "Confirm the URL points to the correct tab and click Refresh once the sheet is updated."
+            )
+        else:
+            st.info(
+                f"📊 No current data found. Please:\n"
+                f"1. Upload a CSV file or configure the file path in 'Configure Data Source' above\n"
+                f"2. Use 'Add/Edit BSR' to manually add BSR values\n"
+                f"3. Ensure your daily script writes to `{current_file_path}`"
+            )
         
         # Show manual BSR entries if any
         manual_entries = load_manual_bsr_entries()
@@ -517,7 +531,6 @@ def render_current_mode_dashboard():
 
     st.divider()
     st.markdown("### 7-Day Core Export (CSV)")
-    core_df = load_recent_core_data(RECENT_CORE_DATA_PATH)
     if core_df.empty:
         st.caption(
             f"Drop the latest 'Core' CSV into `data/{RECENT_CORE_DATA_PATH.name}` to populate this section."
