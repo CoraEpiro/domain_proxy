@@ -271,15 +271,20 @@ def render_current_mode_dashboard():
                             st.success("Deleted!")
                             st.rerun()
     
-    daily_views = (
+    daily_summary = (
         df.groupby(df["date"].dt.floor("D"))
         .agg({"total_views": "sum", "BSR Amazon": "mean"})
-        .rename(columns={"total_views": "Views Sum", "BSR Amazon": "Average BSR"})
         .reset_index()
-        .rename(columns={"date": "Date"})
+        .sort_values("date")
     )
+    daily_summary["views_change"] = daily_summary["total_views"].diff()
+
+    daily_views = daily_summary.rename(
+        columns={"date": "Date", "total_views": "Views Sum", "BSR Amazon": "Average BSR"}
+    )
+    daily_views["Views Change"] = daily_views["Views Sum"].diff().fillna(0)
     daily_views["Date"] = daily_views["Date"].dt.strftime("%Y-%m-%d")
-    daily_views = daily_views.sort_values("Date", ascending=True)
+    daily_views["Views Change"] = daily_views["Views Change"].fillna(0)
     
     st.markdown("### Current Performance Dataset")
     st.caption("Daily view counts and manual BSR entries.")
@@ -290,13 +295,13 @@ def render_current_mode_dashboard():
     )
     
     if not daily_views.empty:
-        latest_row = daily_views.iloc[-1]
+        latest_row = daily_summary.iloc[-1]
         metric_col1, metric_col2 = st.columns(2)
         with metric_col1:
-            views_val = int(latest_row['Views Sum']) if pd.notna(latest_row['Views Sum']) else 0
-            st.metric("Latest Daily Views", f"{views_val:,}")
+            views_val = latest_row["total_views"] if pd.notna(latest_row["total_views"]) else 0
+            st.metric("Latest Daily Views", f"{int(views_val):,}")
         with metric_col2:
-            bsr_val = latest_row['Average BSR'] if pd.notna(latest_row['Average BSR']) else None
+            bsr_val = latest_row["BSR Amazon"] if pd.notna(latest_row["BSR Amazon"]) else None
             if bsr_val:
                 st.metric("Latest Average BSR", f"{bsr_val:.0f}")
             else:
@@ -329,20 +334,20 @@ def render_current_mode_dashboard():
                 if repost_chart:
                     st.plotly_chart(repost_chart, use_container_width=True)
             
-            # Compute correlation safely (drop NaNs and cast to numeric)
-            corr_df = df[["total_views", "BSR Amazon"]].apply(pd.to_numeric, errors="coerce").dropna()
+            # Compute correlation using day-over-day view deltas vs BSR
+            corr_df = daily_summary[["views_change", "BSR Amazon"]].apply(pd.to_numeric, errors="coerce").dropna()
             if not corr_df.empty:
-                correlation = corr_df["total_views"].corr(-corr_df["BSR Amazon"])
+                correlation = corr_df["views_change"].corr(-corr_df["BSR Amazon"])
                 st.metric(
-                    "Correlation (Views vs BSR improvement)",
+                    "Correlation (ΔViews vs BSR)",
                     f"{correlation:.2f}",
-                    help="Positive correlation indicates higher TikTok views correspond with better (lower) BSR values.",
+                    help="Positive value indicates bigger day-over-day view gains correspond with better (lower) BSR values.",
                 )
             else:
                 st.metric(
-                    "Correlation (Views vs BSR improvement)",
+                    "Correlation (ΔViews vs BSR)",
                     "N/A",
-                    help="Add BSR values to compute the correlation.",
+                    help="Need at least two days with both view changes and BSR values.",
                 )
 
             # Highlight potentially impactful TikTok videos (Google Sheets only)
@@ -359,12 +364,7 @@ def render_current_mode_dashboard():
                         )
 
                 # Build daily aggregates including day-over-day BSR change
-                daily = (
-                    df.groupby(df["date"].dt.floor("D"))
-                    .agg({"total_views": "sum", "BSR Amazon": "mean"})
-                    .reset_index()
-                    .sort_values("date")
-                )
+                daily = daily_summary.copy()
                 daily["prev_bsr"] = daily["BSR Amazon"].shift(1)
                 daily["bsr_improvement"] = (daily["prev_bsr"] - daily["BSR Amazon"]).fillna(0)
 
