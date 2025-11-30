@@ -167,6 +167,8 @@ def render_current_mode_dashboard():
     
     # Load latest 7-day core CSV for merging and reporting
     core_df = load_recent_core_data(RECENT_CORE_DATA_PATH)
+    details_df = load_video_details_long(VIDEO_DETAILS_DATA_PATH)
+    summary_df = summarize_video_details(details_df) if not details_df.empty else pd.DataFrame()
 
     # Determine data source and load data
     if st.session_state.use_google_sheets:
@@ -432,6 +434,14 @@ def render_current_mode_dashboard():
                                 if shown >= 3:
                                     break
 
+                # Pre-compute detail lookup for video metrics
+                details_lookup = {}
+                if not details_df.empty and "video_id" in details_df.columns:
+                    for vid, group in details_df.groupby("video_id"):
+                        details_lookup[vid] = group.sort_values("date")
+
+                summary_lookup = summary_df.set_index("video_id") if not summary_df.empty else None
+
                 # Show videos grouped by video (not date) - video-based view
                 st.markdown("### TikTok Videos")
                 import streamlit.components.v1 as components
@@ -443,23 +453,44 @@ def render_current_mode_dashboard():
                     # Calculate total views per video for sorting
                     video_stats = []
                     for url in url_to_dates.keys():
+                        video_id = parse_tiktok_video_id(url)
                         dates = sorted(url_to_dates[url])
-                        # Get views for this video across all its dates
                         video_views = []
-                        for d in dates:
-                            day_data = daily[daily["date"].dt.normalize() == pd.to_datetime(d).normalize()]
-                            if not day_data.empty:
-                                video_views.append({
-                                    "date": d,
-                                    "views": day_data.iloc[0]["total_views"] if pd.notna(day_data.iloc[0]["total_views"]) else 0,
-                                    "bsr": day_data.iloc[0]["BSR Amazon"] if pd.notna(day_data.iloc[0]["BSR Amazon"]) else None
-                                })
-                        total_views = sum(v["views"] for v in video_views) if video_views else 0
+                        detail_group = details_lookup.get(video_id) if video_id else None
+
+                        if detail_group is not None:
+                            for _, row in detail_group.iterrows():
+                                video_views.append(
+                                    {
+                                        "date": row["date"],
+                                        "views": row.get("views"),
+                                        "likes": row.get("likes"),
+                                        "comments": row.get("comments"),
+                                        "shares": row.get("shares"),
+                                    }
+                                )
+                            total_views = detail_group["views"].dropna().iloc[-1] if detail_group["views"].notna().any() else 0
+                            first_date = detail_group["date"].iloc[0]
+                        else:
+                            for d in dates:
+                                day_data = daily[daily["date"].dt.normalize() == pd.to_datetime(d).normalize()]
+                                if not day_data.empty:
+                                    video_views.append({
+                                        "date": d,
+                                        "views": day_data.iloc[0]["total_views"] if pd.notna(day_data.iloc[0]["total_views"]) else 0,
+                                        "likes": None,
+                                        "comments": None,
+                                        "shares": None,
+                                    })
+                            total_views = sum(v["views"] for v in video_views) if video_views else 0
+                            first_date = dates[0] if dates else None
+
                         video_stats.append({
                             "url": url,
+                            "video_id": video_id,
                             "dates": dates,
                             "total_views": total_views,
-                            "first_date": dates[0] if dates else None,
+                            "first_date": first_date,
                             "view_data": video_views
                         })
                     
@@ -469,13 +500,12 @@ def render_current_mode_dashboard():
                     # Display each video with its performance chart
                     for vid_stat in video_stats:
                         url = vid_stat["url"]
+                        video_id = vid_stat["video_id"]
                         view_data = vid_stat["view_data"]
                         
-                        # Create two columns: video on left, chart on right
-                        col_video, col_chart = st.columns([1, 1])
+                        col_video, col_chart = st.columns([1, 2])
                         
                         with col_video:
-                            # Embed video (no link above)
                             embed_html = get_tiktok_oembed_html(url)
                             full_html = f'''
                             <div style="display: flex; justify-content: center; margin: 20px 0; width: 100%;">
@@ -483,15 +513,26 @@ def render_current_mode_dashboard():
                             </div>
                             '''
                             components.html(full_html, height=700, scrolling=False)
-                        
+
                         with col_chart:
-                            # Show views over time for this video
+                            stats_row = None
+                            if summary_lookup is not None and video_id in summary_lookup.index:
+                                stats_row = summary_lookup.loc[video_id]
+
+                            if stats_row is not None:
+                                metric_cols = st.columns(3)
+                                metric_cols[0].metric("Latest Views", f"{int(stats_row['latest_views']):,}")
+                                metric_cols[1].metric("Δ Views", f"{int(stats_row['views_delta']):,}")
+                                metric_cols[2].metric("Avg Daily Views", f"{int(stats_row['avg_daily_views'] or 0):,}")
+                                metric_cols = st.columns(3)
+                                metric_cols[0].metric("Likes", f"{int(stats_row['latest_likes'] or 0):,}")
+                                metric_cols[1].metric("Comments", f"{int(stats_row['latest_comments'] or 0):,}")
+                                metric_cols[2].metric("Shares", f"{int(stats_row['latest_shares'] or 0):,}")
+
                             if view_data:
                                 chart_df = pd.DataFrame(view_data)
                                 chart_df["date"] = pd.to_datetime(chart_df["date"])
                                 fig = go.Figure()
-                                
-                                # Views line
                                 fig.add_trace(go.Scatter(
                                     x=chart_df["date"],
                                     y=chart_df["views"],
@@ -500,28 +541,6 @@ def render_current_mode_dashboard():
                                     line=dict(color='#1f77b4', width=2),
                                     yaxis='y'
                                 ))
-                                
-                                # BSR line (if available)
-                                if chart_df["bsr"].notna().any():
-                                    fig.add_trace(go.Scatter(
-                                        x=chart_df["date"],
-                                        y=chart_df["bsr"],
-                                        mode='lines+markers',
-                                        name='BSR',
-                                        line=dict(color='#ff7f0e', width=2),
-                                        yaxis='y2'
-                                    ))
-                                    bsr_vals = chart_df["bsr"].dropna()
-                                    if len(bsr_vals) > 0:
-                                        fig.update_layout(
-                                            yaxis2=dict(
-                                                title="BSR",
-                                                overlaying='y',
-                                                side='right',
-                                                range=[bsr_vals.max() * 1.1, max(bsr_vals.min() * 0.9, 0)]
-                                            )
-                                        )
-                                
                                 fig.update_layout(
                                     title="Views Over Time",
                                     xaxis_title="Date",
@@ -530,11 +549,10 @@ def render_current_mode_dashboard():
                                     template="plotly_white",
                                     showlegend=True
                                 )
-                                
                                 st.plotly_chart(fig, use_container_width=True)
                             else:
                                 st.caption("No view data available for this video")
-                        
+
                         st.divider()
 
     st.divider()
@@ -586,13 +604,11 @@ def render_current_mode_dashboard():
 
     st.divider()
     st.markdown("### Outstanding TikTok Videos (CSV)")
-    details_df = load_video_details_long(VIDEO_DETAILS_DATA_PATH)
     if details_df.empty:
         st.caption(
             f"Add the 'Original Video Details' export to `data/{VIDEO_DETAILS_DATA_PATH.name}` to highlight standout clips."
         )
     else:
-        summary_df = summarize_video_details(details_df)
         if summary_df.empty:
             st.caption("Unable to summarize the video details CSV. Please verify the headers.")
         else:
