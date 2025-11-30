@@ -323,6 +323,60 @@ def create_views_vs_bsr_chart(df: pd.DataFrame) -> go.Figure | None:
     return fig
 
 
+def create_views_change_vs_bsr_chart(daily_df: pd.DataFrame) -> go.Figure | None:
+    """Plot day-over-day view changes against BSR."""
+    if daily_df.empty or "views_change" not in daily_df.columns:
+        return None
+
+    df = daily_df.copy()
+    if "date" not in df.columns:
+        return None
+
+    df["views_change"] = pd.to_numeric(df["views_change"], errors="coerce")
+    df["BSR Amazon"] = pd.to_numeric(df["BSR Amazon"], errors="coerce")
+    df = df.dropna(subset=["date", "views_change", "BSR Amazon"])
+    if df.empty:
+        return None
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=df["date"],
+            y=df["views_change"],
+            name="Δ TikTok Views",
+            mode="lines+markers",
+            line=dict(color="#1f77b4"),
+            hovertemplate="Date: %{x|%b %d, %Y}<br>Δ Views: %{y:,.0f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df["date"],
+            y=df["BSR Amazon"],
+            name="Amazon BSR",
+            mode="lines+markers",
+            line=dict(color="#ff7f0e"),
+            yaxis="y2",
+            hovertemplate="Date: %{x|%b %d, %Y}<br>BSR: %{y:,.0f}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title="Day-over-day TikTok Views vs. Amazon BSR",
+        xaxis=dict(title="Date"),
+        yaxis=dict(title="Δ TikTok Views"),
+        yaxis2=dict(
+            title="Amazon BSR",
+            overlaying="y",
+            side="right",
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        hovermode="x unified",
+        height=450,
+        template="plotly_white",
+    )
+    return fig
+
+
 def create_views_line_chart(df: pd.DataFrame) -> go.Figure | None:
     if df.empty:
         return None

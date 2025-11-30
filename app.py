@@ -16,6 +16,7 @@ from tiktok_utils import (
     create_views_vs_bsr_chart,
     create_views_line_chart,
     create_bsr_line_chart,
+    create_views_change_vs_bsr_chart,
     TIKTOK_DATA_PATH,
     TIKTOK_FILENAME,
     CURRENT_VIEWS_PATH,
@@ -282,7 +283,8 @@ def render_current_mode_dashboard():
     daily_views = daily_summary.rename(
         columns={"date": "Date", "total_views": "Views Sum", "BSR Amazon": "Average BSR"}
     )
-    daily_views["Views Change"] = daily_views["Views Sum"].diff().fillna(0)
+    daily_views = daily_views.drop(columns=["views_change"], errors="ignore")
+    daily_views["Views Change"] = daily_summary["views_change"].fillna(0)
     daily_views["Date"] = daily_views["Date"].dt.strftime("%Y-%m-%d")
     daily_views["Views Change"] = daily_views["Views Change"].fillna(0)
     
@@ -325,7 +327,7 @@ def render_current_mode_dashboard():
         
         if df["BSR Amazon"].notna().any():
             st.markdown("### Combined Insights")
-            combined_chart = create_views_vs_bsr_chart(df)
+            combined_chart = create_views_change_vs_bsr_chart(daily_summary)
             if combined_chart:
                 st.plotly_chart(combined_chart, use_container_width=True)
             
