@@ -23,6 +23,14 @@ from tiktok_utils import (
     load_manual_bsr_entries,
     delete_manual_bsr_entry,
     get_file_modification_time,
+    load_recent_core_data,
+    load_video_details_long,
+    summarize_video_details,
+    create_core_views_chart,
+    create_core_engagement_chart,
+    create_video_growth_scatter,
+    RECENT_CORE_DATA_PATH,
+    VIDEO_DETAILS_DATA_PATH,
 )
 
 APP_VERSION = "2025-11-16-2"
@@ -506,6 +514,146 @@ def render_current_mode_dashboard():
                                 st.caption("No view data available for this video")
                         
                         st.divider()
+
+    st.divider()
+    st.markdown("### 7-Day Core Export (CSV)")
+    core_df = load_recent_core_data(RECENT_CORE_DATA_PATH)
+    if core_df.empty:
+        st.caption(
+            f"Drop the latest 'Core' CSV into `data/{RECENT_CORE_DATA_PATH.name}` to populate this section."
+        )
+    else:
+        core_display = core_df.copy()
+        core_display["Date"] = core_display["Date"].dt.strftime("%Y-%m-%d")
+        st.caption(f"Source: `data/{RECENT_CORE_DATA_PATH.name}`")
+        st.dataframe(core_display, use_container_width=True, hide_index=True)
+
+        latest_core = core_df.iloc[-1]
+        core_metrics = st.columns(3)
+        with core_metrics[0]:
+            total_views = latest_core.get("Total Views")
+            st.metric(
+                "Latest Total Views",
+                f"{int(total_views):,}" if pd.notna(total_views) else "N/A",
+            )
+        with core_metrics[1]:
+            total_likes = latest_core.get("Total Likes")
+            st.metric(
+                "Latest Total Likes",
+                f"{int(total_likes):,}" if pd.notna(total_likes) else "N/A",
+            )
+        with core_metrics[2]:
+            total_shares = latest_core.get("Total Shares")
+            st.metric(
+                "Latest Total Shares",
+                f"{int(total_shares):,}" if pd.notna(total_shares) else "N/A",
+            )
+
+        chart_cols = st.columns(2)
+        with chart_cols[0]:
+            views_chart = create_core_views_chart(core_df)
+            if views_chart:
+                st.plotly_chart(views_chart, use_container_width=True)
+            else:
+                st.caption("Add Original/Repost view columns to plot this chart.")
+        with chart_cols[1]:
+            engagement_chart = create_core_engagement_chart(core_df)
+            if engagement_chart:
+                st.plotly_chart(engagement_chart, use_container_width=True)
+            else:
+                st.caption("Add Likes/Comments/Shares columns to plot this chart.")
+
+    st.divider()
+    st.markdown("### Outstanding TikTok Videos (CSV)")
+    details_df = load_video_details_long(VIDEO_DETAILS_DATA_PATH)
+    if details_df.empty:
+        st.caption(
+            f"Add the 'Original Video Details' export to `data/{VIDEO_DETAILS_DATA_PATH.name}` to highlight standout clips."
+        )
+    else:
+        summary_df = summarize_video_details(details_df)
+        if summary_df.empty:
+            st.caption("Unable to summarize the video details CSV. Please verify the headers.")
+        else:
+            filter_col1, filter_col2, filter_col3 = st.columns(3)
+            with filter_col1:
+                min_latest_views = st.number_input(
+                    "Min latest views", min_value=0, value=50000, step=1000
+                )
+            with filter_col2:
+                min_delta_views = st.number_input(
+                    "Min 7-day views change", min_value=0, value=5000, step=500
+                )
+            with filter_col3:
+                if summary_df["last_date"].notna().any():
+                    default_start = summary_df["last_date"].max() - pd.Timedelta(days=7)
+                    default_start_date = default_start.date()
+                else:
+                    default_start_date = date.today()
+                start_date = st.date_input(
+                    "Observed since",
+                    value=default_start_date,
+                )
+
+            type_options = sorted(summary_df["video_type"].dropna().unique().tolist())
+            selected_types = st.multiselect(
+                "Video types", options=type_options, default=type_options
+            )
+
+            filtered = summary_df.copy()
+            if selected_types:
+                filtered = filtered[filtered["video_type"].isin(selected_types)]
+            if start_date:
+                filtered = filtered[filtered["last_date"].dt.date >= start_date]
+            filtered = filtered[
+                (filtered["latest_views"].fillna(0) >= min_latest_views)
+                & (filtered["views_delta"].fillna(0) >= min_delta_views)
+            ]
+            filtered = filtered.sort_values("views_delta", ascending=False)
+
+            if filtered.empty:
+                st.caption("No videos match the current filters. Try lowering the thresholds.")
+            else:
+                scatter = create_video_growth_scatter(filtered)
+                if scatter:
+                    st.plotly_chart(scatter, use_container_width=True)
+
+                display_cols = [
+                    "video_id",
+                    "video_type",
+                    "first_date",
+                    "last_date",
+                    "latest_views",
+                    "views_delta",
+                    "views_growth_pct",
+                    "avg_daily_views",
+                    "latest_likes",
+                    "latest_comments",
+                    "latest_shares",
+                    "video_url",
+                ]
+                present_cols = [col for col in display_cols if col in filtered.columns]
+                display_df = filtered[present_cols].copy()
+                for col in ["first_date", "last_date"]:
+                    if col in display_df.columns:
+                        display_df[col] = display_df[col].dt.strftime("%Y-%m-%d")
+                if "views_growth_pct" in display_df.columns:
+                    display_df["views_growth_pct"] = display_df["views_growth_pct"].map(
+                        lambda x: f"{x:.1f}%" if pd.notna(x) else "—"
+                    )
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+                top_videos = filtered.head(3)
+                if not top_videos.empty:
+                    st.markdown("#### Watch the Top Clips")
+                    import streamlit.components.v1 as components
+
+                    for _, row in top_videos.iterrows():
+                        st.markdown(
+                            f"**{row['video_id']}** — {int(row['latest_views']):,} views (+{int(row['views_delta']):,})"
+                        )
+                        embed_html = get_tiktok_oembed_html(row["video_url"])
+                        components.html(embed_html, height=700, scrolling=False)
 
 
 def render_historical_dashboard():

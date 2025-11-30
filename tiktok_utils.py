@@ -29,6 +29,12 @@ BSR_MANUAL_ENTRIES_PATH = DATA_DIR / "manual_bsr_entries.json"
 MANUAL_TIKTOK_LINKS_PATH = DATA_DIR / "manual_tiktok_links.json"
 DB_PATH = DATA_DIR / "app.db"
 
+# Recent 7-day exports
+RECENT_CORE_FILENAME = "tiktok_core_latest.csv"
+RECENT_CORE_DATA_PATH = DATA_DIR / RECENT_CORE_FILENAME
+VIDEO_DETAILS_FILENAME = "tiktok_video_details_latest.csv"
+VIDEO_DETAILS_DATA_PATH = DATA_DIR / VIDEO_DETAILS_FILENAME
+
 
 def _ensure_dataset(csv_path: Path) -> Path:
     csv_path = Path(csv_path)
@@ -124,6 +130,31 @@ def load_views_bsr_data(csv_path: Path = TIKTOK_DATA_PATH) -> pd.DataFrame:
     return df[["date", "total_views", "BSR Amazon"]]
 
 
+def load_recent_core_data(csv_path: Path = RECENT_CORE_DATA_PATH) -> pd.DataFrame:
+    """Load the 7-day core export (Original/Repost/Total metrics)."""
+    csv_path = Path(csv_path)
+    if not csv_path.exists():
+        return pd.DataFrame()
+
+    try:
+        df = pd.read_csv(csv_path)
+    except Exception:
+        return pd.DataFrame()
+
+    if df.empty:
+        return pd.DataFrame()
+
+    df.columns = df.columns.str.strip()
+    date_col = "Date" if "Date" in df.columns else df.columns[0]
+    df["Date"] = _parse_tiktok_dates(df[date_col])
+    numeric_cols = [col for col in df.columns if col != "Date"]
+    if numeric_cols:
+        df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
+    df = df.dropna(subset=["Date"])
+    df = df.sort_values("Date")
+    return df.reset_index(drop=True)
+
+
 def create_views_vs_bsr_chart(df: pd.DataFrame) -> go.Figure | None:
     if df.empty:
         return None
@@ -195,6 +226,89 @@ def create_bsr_line_chart(df: pd.DataFrame) -> go.Figure | None:
         xaxis_title="Date",
         yaxis_title="Amazon BSR",
         template="plotly_white",
+    )
+    return fig
+
+
+def create_core_views_chart(df: pd.DataFrame) -> go.Figure | None:
+    """Compare Original/Repost/Total views for recent core export."""
+    if df.empty or "Date" not in df.columns:
+        return None
+
+    value_cols = [col for col in ["Original Views", "Repost Views", "Total Views"] if col in df.columns]
+    if not value_cols:
+        return None
+
+    chart_df = df.melt(
+        id_vars="Date",
+        value_vars=value_cols,
+        var_name="Series",
+        value_name="Views",
+    )
+    fig = px.line(
+        chart_df,
+        x="Date",
+        y="Views",
+        color="Series",
+        markers=True,
+        title="Original vs Repost vs Total Views",
+    )
+    fig.update_layout(template="plotly_white", xaxis_title="Date", yaxis_title="Views")
+    return fig
+
+
+def create_core_engagement_chart(df: pd.DataFrame) -> go.Figure | None:
+    """Stacked area chart for likes/comments/shares."""
+    if df.empty or "Date" not in df.columns:
+        return None
+
+    value_cols = [col for col in ["Total Likes", "Total Comments", "Total Shares"] if col in df.columns]
+    if not value_cols:
+        return None
+
+    chart_df = df.melt(
+        id_vars="Date",
+        value_vars=value_cols,
+        var_name="Engagement",
+        value_name="Count",
+    )
+    fig = px.area(
+        chart_df,
+        x="Date",
+        y="Count",
+        color="Engagement",
+        title="Engagement Trends",
+    )
+    fig.update_layout(template="plotly_white", xaxis_title="Date", yaxis_title="Count")
+    return fig
+
+
+def create_video_growth_scatter(summary_df: pd.DataFrame) -> go.Figure | None:
+    """Scatter plot showing views delta vs. latest views for standout videos."""
+    if summary_df.empty:
+        return None
+
+    fig = px.scatter(
+        summary_df,
+        x="views_delta",
+        y="latest_views",
+        color="video_type",
+        size="latest_likes",
+        hover_data={
+            "video_id": True,
+            "views_delta": ":,",
+            "latest_views": ":,",
+            "latest_likes": ":,",
+            "latest_comments": ":,",
+            "latest_shares": ":,",
+            "video_url": True,
+        },
+        title="Video Growth vs Latest Views",
+    )
+    fig.update_layout(
+        template="plotly_white",
+        xaxis_title="7-Day Views Change",
+        yaxis_title="Latest Views",
     )
     return fig
 
@@ -574,6 +688,122 @@ def get_tiktok_oembed_html(url: str) -> str:
     embed_html = f'''<blockquote class="tiktok-embed" cite="{url}" data-video-id="{video_id}" style="max-width: 605px;min-width: 325px;" > <section> {username_link} <p></p> </section> </blockquote> <script async src="https://www.tiktok.com/embed.js"></script>'''
     
     return embed_html
+
+
+def load_video_details_long(csv_path: Path = VIDEO_DETAILS_DATA_PATH) -> pd.DataFrame:
+    """Load the video-details export and reshape it into a long dataframe."""
+    csv_path = Path(csv_path)
+    if not csv_path.exists():
+        return pd.DataFrame()
+
+    try:
+        df_raw = pd.read_csv(csv_path)
+    except Exception:
+        return pd.DataFrame()
+
+    if df_raw.empty:
+        return pd.DataFrame()
+
+    meta_cols = ["Video ID", "Type", "Video URL", "Created Date"]
+    if not set(meta_cols).issubset(df_raw.columns):
+        return pd.DataFrame()
+
+    df_meta = (
+        df_raw[meta_cols]
+        .rename(
+            columns={
+                "Video ID": "video_id",
+                "Type": "video_type",
+                "Video URL": "video_url",
+                "Created Date": "created_date",
+            }
+        )
+        .reset_index(drop=True)
+    )
+    df_meta["created_date"] = _parse_tiktok_dates(df_meta["created_date"])
+
+    metric_cols = [col for col in df_raw.columns if col not in meta_cols]
+    column_groups: dict[tuple[str, str], list[str]] = {}
+    for col in metric_cols:
+        if not isinstance(col, str) or " " not in col:
+            continue
+        try:
+            date_part, metric = col.rsplit(" ", 1)
+        except ValueError:
+            continue
+        metric = metric.strip().lower()
+        if metric not in {"views", "likes", "comments", "shares"}:
+            continue
+        date_part = date_part.strip()
+        column_groups.setdefault((date_part, metric), []).append(col)
+
+    if not column_groups:
+        return pd.DataFrame()
+
+    def _date_sort_key(label: str):
+        parsed = pd.to_datetime(label, errors="coerce")
+        return parsed if pd.notna(parsed) else pd.Timestamp.max
+
+    ordered_dates = sorted({date for date, _ in column_groups.keys()}, key=_date_sort_key)
+    ordered_data: dict[tuple[str, str], pd.Series] = {}
+    for date_label in ordered_dates:
+        for metric in ("views", "likes", "comments", "shares"):
+            cols = column_groups.get((date_label, metric))
+            if not cols:
+                continue
+            numeric_values = df_raw[cols].apply(pd.to_numeric, errors="coerce")
+            aggregated = numeric_values.max(axis=1, skipna=True)
+            ordered_data[(date_label, metric)] = aggregated
+
+    if not ordered_data:
+        return pd.DataFrame()
+
+    wide_df = pd.DataFrame(ordered_data)
+    wide_df.columns = pd.MultiIndex.from_tuples(wide_df.columns, names=["date_label", "metric"])
+    wide_df["row_index"] = wide_df.index
+    stacked = wide_df.set_index("row_index").stack(level="date_label").reset_index()
+    stacked = stacked.rename(columns={"date_label": "date"})
+    metric_columns = [col for col in stacked.columns if col not in {"row_index", "date"}]
+    stacked = stacked.rename(columns={col: col.lower() for col in metric_columns})
+
+    meta_aligned = df_meta.loc[stacked["row_index"]].reset_index(drop=True)
+    long_df = pd.concat([meta_aligned, stacked.drop(columns="row_index").reset_index(drop=True)], axis=1)
+    long_df["date"] = _parse_tiktok_dates(long_df["date"])
+    for col in ["views", "likes", "comments", "shares"]:
+        if col in long_df.columns:
+            long_df[col] = pd.to_numeric(long_df[col], errors="coerce")
+    long_df = long_df.dropna(subset=["date"])
+    return long_df
+
+
+def summarize_video_details(details_df: pd.DataFrame) -> pd.DataFrame:
+    """Summarize per-video performance over the observed window."""
+    if details_df.empty:
+        return pd.DataFrame()
+
+    sorted_df = details_df.sort_values(["video_id", "date"])
+    metrics = sorted_df.groupby(
+        ["video_id", "video_type", "video_url", "created_date"],
+        as_index=False,
+    ).agg(
+        first_date=("date", "first"),
+        last_date=("date", "last"),
+        first_views=("views", "first"),
+        latest_views=("views", "last"),
+        avg_daily_views=("views", "mean"),
+        latest_likes=("likes", "last"),
+        latest_comments=("comments", "last"),
+        latest_shares=("shares", "last"),
+    )
+
+    metrics["views_delta"] = metrics["latest_views"] - metrics["first_views"]
+    metrics["views_growth_pct"] = (
+        metrics["views_delta"] / metrics["first_views"].replace(0, pd.NA)
+    ) * 100
+    metrics["observation_days"] = (metrics["last_date"] - metrics["first_date"]).dt.days + 1
+    metrics["days_since_created"] = (metrics["last_date"] - metrics["created_date"]).dt.days
+
+    return metrics
 
 
 def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[str] = None) -> dict:
