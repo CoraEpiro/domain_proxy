@@ -266,6 +266,16 @@ def create_current_dataset(
         combined = pd.DataFrame(columns=["date", "total_views", "BSR Amazon"])
 
     combined = _apply_manual_bsr(combined, manual_entries)
+
+    if core_df is not None and not core_df.empty and "Date" in core_df.columns:
+        core_dates = pd.to_datetime(core_df["Date"], errors="coerce").dropna()
+        if not core_dates.empty:
+            min_core = core_dates.min()
+            max_core = core_dates.max()
+            combined = combined[
+                (combined["date"] >= min_core) & (combined["date"] <= max_core)
+            ]
+
     combined = combined.sort_values("date")
     return combined.reset_index(drop=True)
 
@@ -395,6 +405,27 @@ def create_core_engagement_chart(df: pd.DataFrame) -> go.Figure | None:
         title="Engagement Trends",
     )
     fig.update_layout(template="plotly_white", xaxis_title="Date", yaxis_title="Count")
+    return fig
+
+
+def create_repost_views_chart(df: pd.DataFrame) -> go.Figure | None:
+    """Single-series line chart for repost views."""
+    if df.empty or "Date" not in df.columns or "Repost Views" not in df.columns:
+        return None
+
+    chart_df = df[["Date", "Repost Views"]].copy()
+    chart_df = chart_df.dropna()
+    if chart_df.empty:
+        return None
+
+    fig = px.line(
+        chart_df,
+        x="Date",
+        y="Repost Views",
+        title="Reposted Views Over Time",
+        markers=True,
+    )
+    fig.update_layout(template="plotly_white", xaxis_title="Date", yaxis_title="Repost Views")
     return fig
 
 

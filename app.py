@@ -29,6 +29,7 @@ from tiktok_utils import (
     summarize_video_details,
     create_core_views_chart,
     create_core_engagement_chart,
+    create_repost_views_chart,
     create_video_growth_scatter,
     RECENT_CORE_DATA_PATH,
     VIDEO_DETAILS_DATA_PATH,
@@ -322,6 +323,11 @@ def render_current_mode_dashboard():
             combined_chart = create_views_vs_bsr_chart(df)
             if combined_chart:
                 st.plotly_chart(combined_chart, use_container_width=True)
+            
+            if not core_df.empty:
+                repost_chart = create_repost_views_chart(core_df)
+                if repost_chart:
+                    st.plotly_chart(repost_chart, use_container_width=True)
             
             # Compute correlation safely (drop NaNs and cast to numeric)
             corr_df = df[["total_views", "BSR Amazon"]].apply(pd.to_numeric, errors="coerce").dropna()
