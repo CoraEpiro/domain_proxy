@@ -187,7 +187,9 @@ def _core_to_current_frame(core_df: pd.DataFrame | None) -> pd.DataFrame:
                 .sum(axis=1, skipna=True)
             )
         else:
-            views_series = pd.Series(pd.NA, index=df.index, dtype="float64")
+            views_series = pd.Series(
+                [float("nan")] * len(df), index=df.index, dtype="float64"
+            )
 
     bsr_col = next(
         (col for col in df.columns if isinstance(col, str) and "bsr" in col.lower()),
@@ -196,7 +198,9 @@ def _core_to_current_frame(core_df: pd.DataFrame | None) -> pd.DataFrame:
     if bsr_col:
         bsr_series = pd.to_numeric(df[bsr_col], errors="coerce")
     else:
-        bsr_series = pd.Series(pd.NA, index=df.index, dtype="float64")
+        bsr_series = pd.Series(
+            [float("nan")] * len(df), index=df.index, dtype="float64"
+        )
 
     current = pd.DataFrame(
         {
