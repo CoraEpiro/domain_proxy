@@ -169,7 +169,7 @@ def render_current_mode_dashboard():
     core_df = load_recent_core_data(RECENT_CORE_DATA_PATH)
     details_df = load_video_details_long(VIDEO_DETAILS_DATA_PATH)
     summary_df = summarize_video_details(details_df) if not details_df.empty else pd.DataFrame()
-
+    
     # Determine data source and load data
     if st.session_state.use_google_sheets:
         # Load from Google Sheets
@@ -239,12 +239,12 @@ def render_current_mode_dashboard():
                 "Confirm the URL points to the correct tab and click Refresh once the sheet is updated."
             )
         else:
-            st.info(
-                f"📊 No current data found. Please:\n"
-                f"1. Upload a CSV file or configure the file path in 'Configure Data Source' above\n"
-                f"2. Use 'Add/Edit BSR' to manually add BSR values\n"
+        st.info(
+            f"📊 No current data found. Please:\n"
+            f"1. Upload a CSV file or configure the file path in 'Configure Data Source' above\n"
+            f"2. Use 'Add/Edit BSR' to manually add BSR values\n"
                 f"3. Ensure your daily script writes to `{current_file_path}`"
-            )
+        )
         
         # Show manual BSR entries if any
         manual_entries = load_manual_bsr_entries()
@@ -368,7 +368,8 @@ def render_current_mode_dashboard():
     details_lookup = {}
     if not details_df.empty and "video_id" in details_df.columns:
         for vid, group in details_df.groupby("video_id"):
-            details_lookup[vid] = group.sort_values("date")
+            # Store with string key for consistent lookup
+            details_lookup[str(vid)] = group.sort_values("date")
     summary_lookup = summary_df.set_index("video_id") if not summary_df.empty else pd.DataFrame()
     
     # Show outstanding videos from CSV with filters
@@ -388,8 +389,9 @@ def render_current_mode_dashboard():
                     "Min latest views", min_value=0, value=50000, step=1000
                 )
             with filter_col2:
-                min_delta_views = st.number_input(
-                    "Min 7-day views change", min_value=0, value=5000, step=500
+                min_daily_change = st.number_input(
+                    "Min daily views change", min_value=0, value=5000, step=500,
+                    help="Minimum average daily view increment"
                 )
             with filter_col3:
                 start_date = st.date_input(
@@ -407,11 +409,13 @@ def render_current_mode_dashboard():
             filtered = filtered[filtered["video_type"].isin(selected_types)]
         if start_date:
             filtered = filtered[filtered["last_date"].dt.date >= start_date]
+        
+        # Filter by latest views and average daily change
         filtered = filtered[
             (filtered["latest_views"].fillna(0) >= min_latest_views)
-            & (filtered["views_delta"].fillna(0) >= min_delta_views)
+            & (filtered["avg_daily_views"].fillna(0) >= min_daily_change)
         ]
-        filtered = filtered.sort_values("views_delta", ascending=False)
+        filtered = filtered.sort_values("avg_daily_views", ascending=False)
         
         if not filtered.empty:
             # Display videos with embeds and metrics
@@ -424,23 +428,29 @@ def render_current_mode_dashboard():
                 if not video_url:
                     continue
                 
-                st.markdown(f"**{video_id}** — {int(row['latest_views']):,} views (+{int(row['views_delta']):,})")
+                # Format created date if available
+                created_date_str = ""
+                if "created_date" in row and pd.notna(row["created_date"]):
+                    created_date = pd.to_datetime(row["created_date"])
+                    created_date_str = f" | Created: {created_date.strftime('%Y-%m-%d')}"
+                
+                st.markdown(f"**{video_id}** — {int(row['latest_views']):,} views (+{int(row['views_delta']):,}){created_date_str}")
                 
                 col_video, col_chart = st.columns([1, 2])
-                
-                with col_video:
+                        
+                        with col_video:
                     embed_html = get_tiktok_oembed_html(video_url)
-                    full_html = f'''
-                    <div style="display: flex; justify-content: center; margin: 20px 0; width: 100%;">
-                        {embed_html}
-                    </div>
-                    '''
-                    components.html(full_html, height=700, scrolling=False)
-                
-                with col_chart:
+                            full_html = f'''
+                            <div style="display: flex; justify-content: center; margin: 20px 0; width: 100%;">
+                                {embed_html}
+                            </div>
+                            '''
+                            components.html(full_html, height=700, scrolling=False)
+                        
+                        with col_chart:
                     # Show metrics
                     metric_cols = st.columns(3)
-                    metric_cols[0].metric("Latest Views", f"{int(row['latest_views']):,}")
+                    metric_cols[0].metric("Total Views", f"{int(row['latest_views']):,}")
                     metric_cols[1].metric("Δ Views", f"{int(row['views_delta']):,}")
                     metric_cols[2].metric("Avg Daily Views", f"{int(row['avg_daily_views'] or 0):,}")
                     metric_cols = st.columns(3)
@@ -448,46 +458,97 @@ def render_current_mode_dashboard():
                     metric_cols[1].metric("Comments", f"{int(row['latest_comments'] or 0):,}")
                     metric_cols[2].metric("Shares", f"{int(row['latest_shares'] or 0):,}")
                     
-                    # Show chart if we have detail data
-                    detail_group = details_lookup.get(video_id) if video_id in details_lookup else None
+                    # Show charts if we have detail data
+                    detail_group = details_lookup.get(video_id)
+                    
                     if detail_group is not None and not detail_group.empty:
-                        chart_df = detail_group[["date", "views"]].copy()
-                        chart_df["date"] = pd.to_datetime(chart_df["date"])
+                        # Prepare chart data
+                        chart_df = detail_group[["date", "views", "likes", "comments", "shares"]].copy()
+                                chart_df["date"] = pd.to_datetime(chart_df["date"])
                         chart_df["views"] = pd.to_numeric(chart_df["views"], errors="coerce")
-                        chart_df = chart_df.dropna()
+                        chart_df["likes"] = pd.to_numeric(chart_df["likes"], errors="coerce")
+                        chart_df["comments"] = pd.to_numeric(chart_df["comments"], errors="coerce")
+                        chart_df["shares"] = pd.to_numeric(chart_df["shares"], errors="coerce")
+                        chart_df = chart_df.dropna(subset=["date"])
                         
-                        if not chart_df.empty:
-                            fig = go.Figure()
-                            fig.add_trace(go.Scatter(
-                                x=chart_df["date"],
-                                y=chart_df["views"],
-                                mode='lines+markers',
-                                name='Views',
-                                line=dict(color='#1f77b4', width=2),
+                        if not chart_df.empty and chart_df["views"].notna().any():
+                            # Views chart
+                            fig_views = go.Figure()
+                            fig_views.add_trace(go.Scatter(
+                                    x=chart_df["date"],
+                                    y=chart_df["views"],
+                                    mode='lines+markers',
+                                name='Total Views',
+                                    line=dict(color='#1f77b4', width=2),
+                                marker=dict(size=6),
                             ))
-                            fig.update_layout(
-                                title="Views Over Time",
+                            fig_views.update_layout(
+                                title="Total Views Over Time",
                                 xaxis_title="Date",
                                 yaxis_title="Views",
-                                height=400,
+                                height=300,
                                 template="plotly_white",
-                                showlegend=True
+                                showlegend=True,
+                                margin=dict(l=40, r=20, t=50, b=40),
                             )
-                            st.plotly_chart(fig, use_container_width=True)
-                        else:
-                            st.caption("No view data available for this video")
+                            st.plotly_chart(fig_views, use_container_width=True)
+                            
+                            # Engagement metrics chart (likes, comments, shares)
+                            if chart_df[["likes", "comments", "shares"]].notna().any().any():
+                                fig_engagement = go.Figure()
+                                
+                                if chart_df["likes"].notna().any():
+                                    fig_engagement.add_trace(go.Scatter(
+                                        x=chart_df["date"],
+                                        y=chart_df["likes"],
+                                        mode='lines+markers',
+                                        name='Likes',
+                                        line=dict(color='#ff7f0e', width=2),
+                                        marker=dict(size=5),
+                                    ))
+                                
+                                if chart_df["comments"].notna().any():
+                                    fig_engagement.add_trace(go.Scatter(
+                                        x=chart_df["date"],
+                                        y=chart_df["comments"],
+                                        mode='lines+markers',
+                                        name='Comments',
+                                        line=dict(color='#2ca02c', width=2),
+                                        marker=dict(size=5),
+                                    ))
+                                
+                                if chart_df["shares"].notna().any():
+                                    fig_engagement.add_trace(go.Scatter(
+                                        x=chart_df["date"],
+                                        y=chart_df["shares"],
+                                        mode='lines+markers',
+                                        name='Shares',
+                                        line=dict(color='#d62728', width=2),
+                                        marker=dict(size=5),
+                                    ))
+                                
+                                fig_engagement.update_layout(
+                                    title="Engagement Metrics Over Time",
+                                    xaxis_title="Date",
+                                    yaxis_title="Count",
+                                    height=300,
+                                    template="plotly_white",
+                                    showlegend=True,
+                                    margin=dict(l=40, r=20, t=50, b=40),
+                                )
+                                st.plotly_chart(fig_engagement, use_container_width=True)
                     else:
-                        st.caption("No view data available for this video")
-                
+                        st.caption("No detailed view data available for this video")
+                                
                 st.divider()
         else:
             st.caption("No videos match the current filters. Try lowering the thresholds.")
-    else:
+                            else:
         st.caption(
             f"Add the 'Original Video Details' export to `data/{VIDEO_DETAILS_DATA_PATH.name}` to see individual video performance."
         )
-
-    st.divider()
+                        
+                        st.divider()
     st.markdown("### 7-Day Core Export (CSV)")
     if core_df.empty:
         st.caption(
@@ -611,7 +672,7 @@ def render_herbalvineyard_placeholder():
     st.title("HerbalVineyard Performance Dashboard")
     st.info(
         "📊 This page will be updated whenever we have sufficient data for HerbalVineyard."
-    )
+        )
 
 
 def main():
@@ -624,18 +685,18 @@ def main():
     
     # Mode selector in sidebar (only for TrueSeaMoss)
     if brand == "TrueSeaMoss":
-        with st.sidebar:
-            st.header("⚙️ Settings")
-            mode = st.radio(
-                "Select Mode",
-                ["Historical", "Current"],
-                help="Historical: 90 days historical data\nCurrent: Daily updated data with manual BSR entries"
-            )
-        
-        if mode == "Historical":
-            render_historical_dashboard()
-        else:
-            render_current_mode_dashboard()
+    with st.sidebar:
+        st.header("⚙️ Settings")
+        mode = st.radio(
+            "Select Mode",
+            ["Historical", "Current"],
+            help="Historical: 90 days historical data\nCurrent: Daily updated data with manual BSR entries"
+        )
+    
+    if mode == "Historical":
+        render_historical_dashboard()
+    else:
+        render_current_mode_dashboard()
     else:
         # HerbalVineyard placeholder
         render_herbalvineyard_placeholder()
