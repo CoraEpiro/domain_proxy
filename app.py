@@ -475,11 +475,11 @@ def render_current_mode_dashboard():
                             # Views chart
                             fig_views = go.Figure()
                             fig_views.add_trace(go.Scatter(
-                                x=chart_df["date"],
-                                y=chart_df["views"],
-                                mode='lines+markers',
+                                    x=chart_df["date"],
+                                    y=chart_df["views"],
+                                    mode='lines+markers',
                                 name='Total Views',
-                                line=dict(color='#1f77b4', width=2),
+                                    line=dict(color='#1f77b4', width=2),
                                 marker=dict(size=6),
                             ))
                             fig_views.update_layout(
@@ -685,18 +685,18 @@ def main():
     
     # Mode selector in sidebar (only for TrueSeaMoss)
     if brand == "TrueSeaMoss":
-    with st.sidebar:
-        st.header("⚙️ Settings")
-        mode = st.radio(
-            "Select Mode",
-            ["Historical", "Current"],
-            help="Historical: 90 days historical data\nCurrent: Daily updated data with manual BSR entries"
-        )
-    
-    if mode == "Historical":
-        render_historical_dashboard()
-    else:
-        render_current_mode_dashboard()
+        with st.sidebar:
+            st.header("⚙️ Settings")
+            mode = st.radio(
+                "Select Mode",
+                ["Historical", "Current"],
+                help="Historical: 90 days historical data\nCurrent: Daily updated data with manual BSR entries"
+            )
+        
+        if mode == "Historical":
+            render_historical_dashboard()
+        else:
+            render_current_mode_dashboard()
     else:
         # HerbalVineyard placeholder
         render_herbalvineyard_placeholder()
