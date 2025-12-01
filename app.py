@@ -543,7 +543,7 @@ def render_current_mode_dashboard():
                 st.divider()
         else:
             st.caption("No videos match the current filters. Try lowering the thresholds.")
-                            else:
+    else:
         st.caption(
             f"Add the 'Original Video Details' export to `data/{VIDEO_DETAILS_DATA_PATH.name}` to see individual video performance."
         )
