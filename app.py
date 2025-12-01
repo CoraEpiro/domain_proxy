@@ -437,17 +437,17 @@ def render_current_mode_dashboard():
                 st.markdown(f"**{video_id}** — {int(row['latest_views']):,} views (+{int(row['views_delta']):,}){created_date_str}")
                 
                 col_video, col_chart = st.columns([1, 2])
-                        
-                        with col_video:
+                
+                with col_video:
                     embed_html = get_tiktok_oembed_html(video_url)
-                            full_html = f'''
-                            <div style="display: flex; justify-content: center; margin: 20px 0; width: 100%;">
-                                {embed_html}
-                            </div>
-                            '''
-                            components.html(full_html, height=700, scrolling=False)
-                        
-                        with col_chart:
+                    full_html = f'''
+                    <div style="display: flex; justify-content: center; margin: 20px 0; width: 100%;">
+                        {embed_html}
+                    </div>
+                    '''
+                    components.html(full_html, height=700, scrolling=False)
+                
+                with col_chart:
                     # Show metrics
                     metric_cols = st.columns(3)
                     metric_cols[0].metric("Total Views", f"{int(row['latest_views']):,}")
@@ -464,7 +464,7 @@ def render_current_mode_dashboard():
                     if detail_group is not None and not detail_group.empty:
                         # Prepare chart data
                         chart_df = detail_group[["date", "views", "likes", "comments", "shares"]].copy()
-                                chart_df["date"] = pd.to_datetime(chart_df["date"])
+                        chart_df["date"] = pd.to_datetime(chart_df["date"])
                         chart_df["views"] = pd.to_numeric(chart_df["views"], errors="coerce")
                         chart_df["likes"] = pd.to_numeric(chart_df["likes"], errors="coerce")
                         chart_df["comments"] = pd.to_numeric(chart_df["comments"], errors="coerce")
@@ -475,11 +475,11 @@ def render_current_mode_dashboard():
                             # Views chart
                             fig_views = go.Figure()
                             fig_views.add_trace(go.Scatter(
-                                    x=chart_df["date"],
-                                    y=chart_df["views"],
-                                    mode='lines+markers',
+                                x=chart_df["date"],
+                                y=chart_df["views"],
+                                mode='lines+markers',
                                 name='Total Views',
-                                    line=dict(color='#1f77b4', width=2),
+                                line=dict(color='#1f77b4', width=2),
                                 marker=dict(size=6),
                             ))
                             fig_views.update_layout(
