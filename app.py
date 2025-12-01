@@ -282,13 +282,11 @@ def render_current_mode_dashboard():
     )
     daily_summary["views_change"] = daily_summary["total_views"].diff()
 
-    daily_views = daily_summary.rename(
-        columns={"date": "Date", "total_views": "Views Sum", "BSR Amazon": "Average BSR"}
+    daily_views = daily_summary[["date", "views_change", "BSR Amazon"]].rename(
+        columns={"date": "Date", "views_change": "Views", "BSR Amazon": "Average BSR"}
     )
-    daily_views = daily_views.drop(columns=["views_change"], errors="ignore")
-    daily_views["Views Change"] = daily_summary["views_change"].fillna(0)
     daily_views["Date"] = daily_views["Date"].dt.strftime("%Y-%m-%d")
-    daily_views["Views Change"] = daily_views["Views Change"].fillna(0)
+    daily_views["Views"] = daily_views["Views"].fillna(0)
     
     st.markdown("### Current Performance Dataset")
     st.caption("Daily view counts and manual BSR entries.")
@@ -298,12 +296,12 @@ def render_current_mode_dashboard():
         hide_index=True,
     )
     
-    if not daily_views.empty:
-        latest_row = daily_summary.iloc[-1]
+        if not daily_views.empty:
+            latest_row = daily_summary.iloc[-1]
+            delta = latest_row["views_change"] if pd.notna(latest_row["views_change"]) else 0
         metric_col1, metric_col2 = st.columns(2)
         with metric_col1:
-            views_val = latest_row["total_views"] if pd.notna(latest_row["total_views"]) else 0
-            st.metric("Latest Daily Views", f"{int(views_val):,}")
+                st.metric("Latest Views Change", f"{int(delta):,}")
         with metric_col2:
             bsr_val = latest_row["BSR Amazon"] if pd.notna(latest_row["BSR Amazon"]) else None
             if bsr_val:
@@ -315,7 +313,11 @@ def render_current_mode_dashboard():
     if not df.empty and df["total_views"].notna().any():
         line_col1, line_col2 = st.columns(2)
         with line_col1:
-            views_line = create_views_line_chart(df)
+            delta_df = daily_summary.assign(
+                date=daily_summary["date"],
+                total_views=daily_summary["views_change"]
+            ).rename(columns={"total_views": "total_views"})
+            views_line = create_views_line_chart(delta_df)
             if views_line:
                 st.plotly_chart(views_line, use_container_width=True)
         

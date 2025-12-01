@@ -463,12 +463,15 @@ def create_core_engagement_chart(df: pd.DataFrame) -> go.Figure | None:
 
 
 def create_repost_views_chart(df: pd.DataFrame) -> go.Figure | None:
-    """Single-series line chart for repost views."""
+    """Single-series line chart for daily change in repost views."""
     if df.empty or "Date" not in df.columns or "Repost Views" not in df.columns:
         return None
 
     chart_df = df[["Date", "Repost Views"]].copy()
-    chart_df = chart_df.dropna()
+    chart_df["Date"] = pd.to_datetime(chart_df["Date"], errors="coerce")
+    chart_df = chart_df.dropna(subset=["Date"])
+    chart_df = chart_df.sort_values("Date")
+    chart_df["Repost Views"] = chart_df["Repost Views"].diff().fillna(0)
     if chart_df.empty:
         return None
 
@@ -476,10 +479,10 @@ def create_repost_views_chart(df: pd.DataFrame) -> go.Figure | None:
         chart_df,
         x="Date",
         y="Repost Views",
-        title="Reposted Views Over Time",
+        title="Daily Reposted Views",
         markers=True,
     )
-    fig.update_layout(template="plotly_white", xaxis_title="Date", yaxis_title="Repost Views")
+    fig.update_layout(template="plotly_white", xaxis_title="Date", yaxis_title="Daily Repost Views")
     return fig
 
 
