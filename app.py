@@ -239,12 +239,12 @@ def render_current_mode_dashboard():
                 "Confirm the URL points to the correct tab and click Refresh once the sheet is updated."
             )
         else:
-        st.info(
-            f"📊 No current data found. Please:\n"
-            f"1. Upload a CSV file or configure the file path in 'Configure Data Source' above\n"
-            f"2. Use 'Add/Edit BSR' to manually add BSR values\n"
+            st.info(
+                f"📊 No current data found. Please:\n"
+                f"1. Upload a CSV file or configure the file path in 'Configure Data Source' above\n"
+                f"2. Use 'Add/Edit BSR' to manually add BSR values\n"
                 f"3. Ensure your daily script writes to `{current_file_path}`"
-        )
+            )
         
         # Show manual BSR entries if any
         manual_entries = load_manual_bsr_entries()
