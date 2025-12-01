@@ -296,12 +296,12 @@ def render_current_mode_dashboard():
         hide_index=True,
     )
     
-        if not daily_views.empty:
-            latest_row = daily_summary.iloc[-1]
-            delta = latest_row["views_change"] if pd.notna(latest_row["views_change"]) else 0
+    if not daily_views.empty:
+        latest_row = daily_summary.iloc[-1]
+        delta = latest_row["views_change"] if pd.notna(latest_row["views_change"]) else 0
         metric_col1, metric_col2 = st.columns(2)
         with metric_col1:
-                st.metric("Latest Views Change", f"{int(delta):,}")
+            st.metric("Latest Views Change", f"{int(delta):,}")
         with metric_col2:
             bsr_val = latest_row["BSR Amazon"] if pd.notna(latest_row["BSR Amazon"]) else None
             if bsr_val:
