@@ -356,206 +356,140 @@ def render_current_mode_dashboard():
                     help="Need at least two days with both view changes and BSR values.",
                 )
 
-            # Highlight potentially impactful TikTok videos (Google Sheets only)
-            if st.session_state.use_google_sheets:
-                st.markdown("### Potentially Impactful TikTok Videos")
-                with st.expander("Filter criteria", expanded=False):
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        min_views = st.number_input("Minimum views for consideration", min_value=0, value=5000, step=500)
-                    with col_b:
-                        min_bsr_improvement = st.number_input(
-                            "Minimum BSR improvement (absolute decrease)", min_value=0, value=10, step=5,
-                            help="Improvement is yesterday's BSR minus today's BSR; positive values mean better rank."
-                        )
-
-                # Build daily aggregates including day-over-day BSR change
-                daily = daily_summary.copy()
-                daily["prev_bsr"] = daily["BSR Amazon"].shift(1)
-                daily["bsr_improvement"] = (daily["prev_bsr"] - daily["BSR Amazon"]).fillna(0)
-
-                # Load TikTok URLs per date from Google Sheets (xlsx hyperlinks)
-                sheet_name = st.session_state.get("current_views_sheet_name") or None
-                import logging
-                logging.basicConfig(level=logging.INFO)
-                logger = logging.getLogger(__name__)
-                logger.info(f"Extracting TikTok URLs from sheet: {sheet_name}")
-                date_to_urls = get_date_to_tiktok_urls_from_google_sheets(
-                    st.session_state.current_views_google_sheets_url,
-                    sheet_name=sheet_name,
+    # Unified Individual TikTok Videos Section
+    st.divider()
+    st.markdown("### Individual TikTok Videos")
+    
+    # Load video details data
+    details_df = load_video_details_long(VIDEO_DETAILS_DATA_PATH)
+    summary_df = summarize_video_details(details_df) if not details_df.empty else pd.DataFrame()
+    
+    # Pre-compute lookups for video metrics
+    details_lookup = {}
+    if not details_df.empty and "video_id" in details_df.columns:
+        for vid, group in details_df.groupby("video_id"):
+            details_lookup[vid] = group.sort_values("date")
+    summary_lookup = summary_df.set_index("video_id") if not summary_df.empty else pd.DataFrame()
+    
+    # Show outstanding videos from CSV with filters
+    if not summary_df.empty:
+        # Initialize default filter values
+        if summary_df["last_date"].notna().any():
+            default_start = summary_df["last_date"].max() - pd.Timedelta(days=7)
+            default_start_date = default_start.date()
+        else:
+            default_start_date = date.today()
+        type_options = sorted(summary_df["video_type"].dropna().unique().tolist())
+        
+        with st.expander("📊 Filter Outstanding Videos", expanded=False):
+            filter_col1, filter_col2, filter_col3 = st.columns(3)
+            with filter_col1:
+                min_latest_views = st.number_input(
+                    "Min latest views", min_value=0, value=50000, step=1000
                 )
-                logger.info(f"Extracted URLs for {len(date_to_urls)} dates")
+            with filter_col2:
+                min_delta_views = st.number_input(
+                    "Min 7-day views change", min_value=0, value=5000, step=500
+                )
+            with filter_col3:
+                start_date = st.date_input(
+                    "Observed since",
+                    value=default_start_date,
+                )
+
+            selected_types = st.multiselect(
+                "Video types", options=type_options, default=type_options
+            )
+
+        # Apply filters (outside expander so they work correctly)
+        filtered = summary_df.copy()
+        if selected_types:
+            filtered = filtered[filtered["video_type"].isin(selected_types)]
+        if start_date:
+            filtered = filtered[filtered["last_date"].dt.date >= start_date]
+        filtered = filtered[
+            (filtered["latest_views"].fillna(0) >= min_latest_views)
+            & (filtered["views_delta"].fillna(0) >= min_delta_views)
+        ]
+        filtered = filtered.sort_values("views_delta", ascending=False)
+        
+        if not filtered.empty:
+            scatter = create_video_growth_scatter(filtered)
+            if scatter:
+                st.plotly_chart(scatter, use_container_width=True)
+            
+            # Display videos with embeds and metrics
+            import streamlit.components.v1 as components
+            import plotly.graph_objects as go
+            
+            for _, row in filtered.iterrows():
+                video_id = str(row["video_id"])
+                video_url = row.get("video_url", "")
+                if not video_url:
+                    continue
                 
-                # Reverse mapping: URL -> list of dates (for video-based view)
-                url_to_dates = {}
-                for date, urls in date_to_urls.items():
-                    for url in urls:
-                        if url not in url_to_dates:
-                            url_to_dates[url] = []
-                        url_to_dates[url].append(date)
-
-                candidates = daily[
-                    (daily["total_views"] >= min_views) & (daily["bsr_improvement"] >= min_bsr_improvement)
-                ]
-
-                if candidates.empty:
-                    st.caption("No dates match the current thresholds. Try lowering the minimums above.")
-                    # Diagnostic: show data per day (without URL counts)
-                    diag = []
-                    for _, r in daily.iterrows():
-                        d = pd.to_datetime(r["date"]).normalize()
-                        diag.append({
-                            "Date": pd.to_datetime(d).strftime("%Y-%m-%d"),
-                            "Views": int(r["total_views"]) if pd.notna(r["total_views"]) else 0,
-                            "BSR": int(r["BSR Amazon"]) if pd.notna(r["BSR Amazon"]) else None,
-                        })
-                    st.dataframe(pd.DataFrame(diag), use_container_width=True, hide_index=True)
-                else:
-                    import streamlit.components.v1 as components
-                    seen_all = set()  # Track all videos shown across all dates
-                    for _, row in candidates.iterrows():
-                        day = pd.to_datetime(row["date"]).normalize()
-                        urls = date_to_urls.get(day, [])
-                        if not urls:
-                            continue
-                        st.markdown(f"**{pd.to_datetime(day).strftime('%Y-%m-%d')}** — Views: {int(row['total_views']):,}, BSR Δ: {int(row['bsr_improvement'])}")
-                        # Show up to first 3 unique embeds for that day
-                        shown = 0
-                        for url in urls:
-                            if url not in seen_all:
-                                seen_all.add(url)
-                                # Embed video (no link above)
-                                embed_html = get_tiktok_oembed_html(url)
-                                full_html = f'''
-                                <div style="display: flex; justify-content: center; margin: 20px 0; width: 100%;">
-                                    {embed_html}
-                                </div>
-                                '''
-                                components.html(full_html, height=800, scrolling=False)
-                                shown += 1
-                                if shown >= 3:
-                                    break
-
-                # Pre-compute detail lookup for video metrics
-                details_lookup = {}
-                if not details_df.empty and "video_id" in details_df.columns:
-                    for vid, group in details_df.groupby("video_id"):
-                        details_lookup[vid] = group.sort_values("date")
-
-                summary_lookup = summary_df.set_index("video_id") if not summary_df.empty else None
-
-                # Show videos grouped by video (not date) - video-based view
-                st.markdown("### TikTok Videos")
-                import streamlit.components.v1 as components
-                import plotly.graph_objects as go
+                st.markdown(f"**{video_id}** — {int(row['latest_views']):,} views (+{int(row['views_delta']):,})")
                 
-                if not url_to_dates:
-                    st.caption("No TikTok links found in the selected sheet.")
-                else:
-                    # Calculate total views per video for sorting
-                    video_stats = []
-                    for url in url_to_dates.keys():
-                        video_id = parse_tiktok_video_id(url)
-                        dates = sorted(url_to_dates[url])
-                        video_views = []
-                        detail_group = details_lookup.get(video_id) if video_id else None
-
-                        if detail_group is not None:
-                            for _, row in detail_group.iterrows():
-                                video_views.append(
-                                    {
-                                        "date": row["date"],
-                                        "views": row.get("views"),
-                                        "likes": row.get("likes"),
-                                        "comments": row.get("comments"),
-                                        "shares": row.get("shares"),
-                                    }
-                                )
-                            total_views = detail_group["views"].dropna().iloc[-1] if detail_group["views"].notna().any() else 0
-                            first_date = detail_group["date"].iloc[0]
+                col_video, col_chart = st.columns([1, 2])
+                
+                with col_video:
+                    embed_html = get_tiktok_oembed_html(video_url)
+                    full_html = f'''
+                    <div style="display: flex; justify-content: center; margin: 20px 0; width: 100%;">
+                        {embed_html}
+                    </div>
+                    '''
+                    components.html(full_html, height=700, scrolling=False)
+                
+                with col_chart:
+                    # Show metrics
+                    metric_cols = st.columns(3)
+                    metric_cols[0].metric("Latest Views", f"{int(row['latest_views']):,}")
+                    metric_cols[1].metric("Δ Views", f"{int(row['views_delta']):,}")
+                    metric_cols[2].metric("Avg Daily Views", f"{int(row['avg_daily_views'] or 0):,}")
+                    metric_cols = st.columns(3)
+                    metric_cols[0].metric("Likes", f"{int(row['latest_likes'] or 0):,}")
+                    metric_cols[1].metric("Comments", f"{int(row['latest_comments'] or 0):,}")
+                    metric_cols[2].metric("Shares", f"{int(row['latest_shares'] or 0):,}")
+                    
+                    # Show chart if we have detail data
+                    detail_group = details_lookup.get(video_id) if video_id in details_lookup else None
+                    if detail_group is not None and not detail_group.empty:
+                        chart_df = detail_group[["date", "views"]].copy()
+                        chart_df["date"] = pd.to_datetime(chart_df["date"])
+                        chart_df["views"] = pd.to_numeric(chart_df["views"], errors="coerce")
+                        chart_df = chart_df.dropna()
+                        
+                        if not chart_df.empty:
+                            fig = go.Figure()
+                            fig.add_trace(go.Scatter(
+                                x=chart_df["date"],
+                                y=chart_df["views"],
+                                mode='lines+markers',
+                                name='Views',
+                                line=dict(color='#1f77b4', width=2),
+                            ))
+                            fig.update_layout(
+                                title="Views Over Time",
+                                xaxis_title="Date",
+                                yaxis_title="Views",
+                                height=400,
+                                template="plotly_white",
+                                showlegend=True
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
                         else:
-                            for d in dates:
-                                day_data = daily[daily["date"].dt.normalize() == pd.to_datetime(d).normalize()]
-                                if not day_data.empty:
-                                    video_views.append({
-                                        "date": d,
-                                        "views": day_data.iloc[0]["total_views"] if pd.notna(day_data.iloc[0]["total_views"]) else 0,
-                                        "likes": None,
-                                        "comments": None,
-                                        "shares": None,
-                                    })
-                            total_views = sum(v["views"] for v in video_views) if video_views else 0
-                            first_date = dates[0] if dates else None
-
-                        video_stats.append({
-                            "url": url,
-                            "video_id": video_id,
-                            "dates": dates,
-                            "total_views": total_views,
-                            "first_date": first_date,
-                            "view_data": video_views
-                        })
-                    
-                    # Sort by total views (descending)
-                    video_stats.sort(key=lambda x: x["total_views"], reverse=True)
-                    
-                    # Display each video with its performance chart
-                    for vid_stat in video_stats:
-                        url = vid_stat["url"]
-                        video_id = vid_stat["video_id"]
-                        view_data = vid_stat["view_data"]
-                        
-                        col_video, col_chart = st.columns([1, 2])
-                        
-                        with col_video:
-                            embed_html = get_tiktok_oembed_html(url)
-                            full_html = f'''
-                            <div style="display: flex; justify-content: center; margin: 20px 0; width: 100%;">
-                                {embed_html}
-                            </div>
-                            '''
-                            components.html(full_html, height=700, scrolling=False)
-
-                        with col_chart:
-                            stats_row = None
-                            if summary_lookup is not None and video_id in summary_lookup.index:
-                                stats_row = summary_lookup.loc[video_id]
-
-                            if stats_row is not None:
-                                metric_cols = st.columns(3)
-                                metric_cols[0].metric("Latest Views", f"{int(stats_row['latest_views']):,}")
-                                metric_cols[1].metric("Δ Views", f"{int(stats_row['views_delta']):,}")
-                                metric_cols[2].metric("Avg Daily Views", f"{int(stats_row['avg_daily_views'] or 0):,}")
-                                metric_cols = st.columns(3)
-                                metric_cols[0].metric("Likes", f"{int(stats_row['latest_likes'] or 0):,}")
-                                metric_cols[1].metric("Comments", f"{int(stats_row['latest_comments'] or 0):,}")
-                                metric_cols[2].metric("Shares", f"{int(stats_row['latest_shares'] or 0):,}")
-
-                            if view_data:
-                                chart_df = pd.DataFrame(view_data)
-                                chart_df["date"] = pd.to_datetime(chart_df["date"])
-                                fig = go.Figure()
-                                fig.add_trace(go.Scatter(
-                                    x=chart_df["date"],
-                                    y=chart_df["views"],
-                                    mode='lines+markers',
-                                    name='Views',
-                                    line=dict(color='#1f77b4', width=2),
-                                    yaxis='y'
-                                ))
-                                fig.update_layout(
-                                    title="Views Over Time",
-                                    xaxis_title="Date",
-                                    yaxis_title="Views",
-                                    height=400,
-                                    template="plotly_white",
-                                    showlegend=True
-                                )
-                                st.plotly_chart(fig, use_container_width=True)
-                            else:
-                                st.caption("No view data available for this video")
-
-                        st.divider()
+                            st.caption("No view data available for this video")
+                    else:
+                        st.caption("No view data available for this video")
+                
+                st.divider()
+        else:
+            st.caption("No videos match the current filters. Try lowering the thresholds.")
+    else:
+        st.caption(
+            f"Add the 'Original Video Details' export to `data/{VIDEO_DETAILS_DATA_PATH.name}` to see individual video performance."
+        )
 
     st.divider()
     st.markdown("### 7-Day Core Export (CSV)")
@@ -604,95 +538,6 @@ def render_current_mode_dashboard():
             else:
                 st.caption("Add Likes/Comments/Shares columns to plot this chart.")
 
-    st.divider()
-    st.markdown("### Outstanding TikTok Videos (CSV)")
-    if details_df.empty:
-        st.caption(
-            f"Add the 'Original Video Details' export to `data/{VIDEO_DETAILS_DATA_PATH.name}` to highlight standout clips."
-        )
-    else:
-        if summary_df.empty:
-            st.caption("Unable to summarize the video details CSV. Please verify the headers.")
-        else:
-            filter_col1, filter_col2, filter_col3 = st.columns(3)
-            with filter_col1:
-                min_latest_views = st.number_input(
-                    "Min latest views", min_value=0, value=50000, step=1000
-                )
-            with filter_col2:
-                min_delta_views = st.number_input(
-                    "Min 7-day views change", min_value=0, value=5000, step=500
-                )
-            with filter_col3:
-                if summary_df["last_date"].notna().any():
-                    default_start = summary_df["last_date"].max() - pd.Timedelta(days=7)
-                    default_start_date = default_start.date()
-                else:
-                    default_start_date = date.today()
-                start_date = st.date_input(
-                    "Observed since",
-                    value=default_start_date,
-                )
-
-            type_options = sorted(summary_df["video_type"].dropna().unique().tolist())
-            selected_types = st.multiselect(
-                "Video types", options=type_options, default=type_options
-            )
-
-            filtered = summary_df.copy()
-            if selected_types:
-                filtered = filtered[filtered["video_type"].isin(selected_types)]
-            if start_date:
-                filtered = filtered[filtered["last_date"].dt.date >= start_date]
-            filtered = filtered[
-                (filtered["latest_views"].fillna(0) >= min_latest_views)
-                & (filtered["views_delta"].fillna(0) >= min_delta_views)
-            ]
-            filtered = filtered.sort_values("views_delta", ascending=False)
-
-            if filtered.empty:
-                st.caption("No videos match the current filters. Try lowering the thresholds.")
-            else:
-                scatter = create_video_growth_scatter(filtered)
-                if scatter:
-                    st.plotly_chart(scatter, use_container_width=True)
-
-                display_cols = [
-                    "video_id",
-                    "video_type",
-                    "first_date",
-                    "last_date",
-                    "latest_views",
-                    "views_delta",
-                    "views_growth_pct",
-                    "avg_daily_views",
-                    "latest_likes",
-                    "latest_comments",
-                    "latest_shares",
-                    "video_url",
-                ]
-                present_cols = [col for col in display_cols if col in filtered.columns]
-                display_df = filtered[present_cols].copy()
-                for col in ["first_date", "last_date"]:
-                    if col in display_df.columns:
-                        display_df[col] = display_df[col].dt.strftime("%Y-%m-%d")
-                if "views_growth_pct" in display_df.columns:
-                    display_df["views_growth_pct"] = display_df["views_growth_pct"].map(
-                        lambda x: f"{x:.1f}%" if pd.notna(x) else "—"
-                    )
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
-
-                top_videos = filtered.head(3)
-                if not top_videos.empty:
-                    st.markdown("#### Watch the Top Clips")
-                    import streamlit.components.v1 as components
-
-                    for _, row in top_videos.iterrows():
-                        st.markdown(
-                            f"**{row['video_id']}** — {int(row['latest_views']):,} views (+{int(row['views_delta']):,})"
-                        )
-                        embed_html = get_tiktok_oembed_html(row["video_url"])
-                        components.html(embed_html, height=700, scrolling=False)
 
 
 def render_historical_dashboard():
@@ -765,20 +610,39 @@ def render_historical_dashboard():
         )
 
 
+def render_herbalvineyard_placeholder():
+    """Render placeholder for HerbalVineyard competitor data."""
+    st.title("HerbalVineyard Performance Dashboard")
+    st.info(
+        "📊 This page will be updated whenever we have sufficient data for HerbalVineyard."
+    )
+
+
 def main():
-    # Mode selector in sidebar
-    with st.sidebar:
-        st.header("⚙️ Settings")
-        mode = st.radio(
-            "Select Mode",
-            ["Historical", "Current"],
-            help="Historical: 90 days historical data\nCurrent: Daily updated data with manual BSR entries"
-        )
+    # Brand selector at the top
+    brand = st.selectbox(
+        "Select Brand",
+        ["TrueSeaMoss", "HerbalVineyard"],
+        help="Choose the brand/account to analyze"
+    )
     
-    if mode == "Historical":
-        render_historical_dashboard()
+    # Mode selector in sidebar (only for TrueSeaMoss)
+    if brand == "TrueSeaMoss":
+        with st.sidebar:
+            st.header("⚙️ Settings")
+            mode = st.radio(
+                "Select Mode",
+                ["Historical", "Current"],
+                help="Historical: 90 days historical data\nCurrent: Daily updated data with manual BSR entries"
+            )
+        
+        if mode == "Historical":
+            render_historical_dashboard()
+        else:
+            render_current_mode_dashboard()
     else:
-        render_current_mode_dashboard()
+        # HerbalVineyard placeholder
+        render_herbalvineyard_placeholder()
 
 if __name__ == "__main__":
     main()
