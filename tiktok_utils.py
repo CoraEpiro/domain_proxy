@@ -999,7 +999,6 @@ def summarize_video_details(details_df: pd.DataFrame) -> pd.DataFrame:
         last_date=("date", "last"),
         first_views=("views", "first"),
         latest_views=("views", "last"),
-        avg_daily_views=("views", "mean"),
         latest_likes=("likes", "last"),
         latest_comments=("comments", "last"),
         latest_shares=("shares", "last"),
@@ -1011,6 +1010,13 @@ def summarize_video_details(details_df: pd.DataFrame) -> pd.DataFrame:
     ) * 100
     metrics["observation_days"] = (metrics["last_date"] - metrics["first_date"]).dt.days + 1
     metrics["days_since_created"] = (metrics["last_date"] - metrics["created_date"]).dt.days
+    
+    # Calculate average daily increment: total change divided by number of intervals
+    # If we observe 7 days, the change happens over 6 intervals (day 1->2, 2->3, ..., 6->7)
+    # So we divide by (observation_days - 1) to get the average daily increment
+    intervals = (metrics["observation_days"] - 1).replace(0, pd.NA)
+    metrics["avg_daily_views"] = metrics["views_delta"] / intervals
+    metrics["avg_daily_views"] = metrics["avg_daily_views"].fillna(0)
 
     return metrics
 

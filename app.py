@@ -414,10 +414,6 @@ def render_current_mode_dashboard():
         filtered = filtered.sort_values("views_delta", ascending=False)
         
         if not filtered.empty:
-            scatter = create_video_growth_scatter(filtered)
-            if scatter:
-                st.plotly_chart(scatter, use_container_width=True)
-            
             # Display videos with embeds and metrics
             import streamlit.components.v1 as components
             import plotly.graph_objects as go
