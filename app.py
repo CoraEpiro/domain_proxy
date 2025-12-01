@@ -547,8 +547,8 @@ def render_current_mode_dashboard():
         st.caption(
             f"Add the 'Original Video Details' export to `data/{VIDEO_DETAILS_DATA_PATH.name}` to see individual video performance."
         )
-                        
-                        st.divider()
+
+    st.divider()
     st.markdown("### 7-Day Core Export (CSV)")
     if core_df.empty:
         st.caption(
