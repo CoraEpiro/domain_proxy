@@ -597,9 +597,9 @@ def render_current_mode_dashboard():
 
 
 
-def render_historical_dashboard():
+def render_historical_dashboard(brand_name: str = "Vineyard things"):
     """Render dashboard for historical mode."""
-    st.title("True Sea Moss Performance Dashboard - Historical Mode")
+    st.title(f"{brand_name} Performance Dashboard - Historical Mode")
     st.caption("90 days historical data analysis.")
 
     df = load_views_bsr_data(TIKTOK_DATA_PATH)
@@ -667,39 +667,44 @@ def render_historical_dashboard():
         )
 
 
-def render_herbalvineyard_placeholder():
-    """Render placeholder for HerbalVineyard competitor data."""
-    st.title("HerbalVineyard Performance Dashboard")
-    st.info(
-        "📊 This page will be updated whenever we have sufficient data for HerbalVineyard."
-        )
+def render_vineyard_historical_dashboard():
+    """Render historical dashboard for Vineyard things."""
+    render_historical_dashboard("Vineyard things")
 
 
 def main():
-    # Brand selector at the top
-    brand = st.selectbox(
-        "Select Brand",
-        ["TrueSeaMoss", "HerbalVineyard"],
-        help="Choose the brand/account to analyze"
-    )
-    
-    # Mode selector in sidebar (only for TrueSeaMoss)
-    if brand == "TrueSeaMoss":
-        with st.sidebar:
-            st.header("⚙️ Settings")
+    # Brand and mode selector in sidebar
+    with st.sidebar:
+        st.header("⚙️ Settings")
+        brand = st.selectbox(
+            "Select Brand",
+            ["Trueseamoss", "Vineyard things"],
+            help="Choose the brand/account to analyze"
+        )
+        
+        if brand == "Trueseamoss":
             mode = st.radio(
                 "Select Mode",
-                ["Historical", "Current"],
-                help="Historical: 90 days historical data\nCurrent: Daily updated data with manual BSR entries"
+                ["Current"],
+                help="Current: Daily updated data with manual BSR entries"
             )
-        
-        if mode == "Historical":
-            render_historical_dashboard()
-        else:
+        else:  # Vineyard things
+            mode = st.radio(
+                "Select Mode",
+                ["Historical"],
+                help="Historical: 90 days historical data"
+            )
+    
+    # Render appropriate dashboard based on brand and mode
+    if brand == "Trueseamoss":
+        if mode == "Current":
             render_current_mode_dashboard()
-    else:
-        # HerbalVineyard placeholder
-        render_herbalvineyard_placeholder()
+        # Historical mode commented out for Trueseamoss
+        # else:
+        #     render_historical_dashboard("Trueseamoss")
+    else:  # Vineyard things
+        if mode == "Historical":
+            render_vineyard_historical_dashboard()
 
 if __name__ == "__main__":
     main()
