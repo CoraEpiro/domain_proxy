@@ -667,10 +667,10 @@ def render_historical_dashboard(brand_name: str = "Vineyard things"):
         )
 
 
-def render_vineyard_current_dashboard():
-    """Render current dashboard for Vineyard things (placeholder - no data yet)."""
-    st.title("Vineyard things Performance Dashboard")
-    st.info("📊 This page will be updated when we have data for Vineyard things.")
+def render_herbalvineyard_current_dashboard():
+    """Render current dashboard for HerbalVineyard (placeholder - no data yet)."""
+    st.title("HerbalVineyard Performance Dashboard")
+    st.info("📊 This page will be updated when we have data for HerbalVineyard.")
 
 
 def main():
@@ -679,15 +679,15 @@ def main():
         st.header("⚙️ Settings")
         brand = st.selectbox(
             "Select Brand",
-            ["Trueseamoss", "Vineyard things"],
+            ["Trueseamoss", "HerbalVineyard"],
             help="Choose the brand/account to analyze"
         )
     
     # Render appropriate dashboard based on brand (only current data)
     if brand == "Trueseamoss":
         render_current_mode_dashboard()
-    else:  # Vineyard things
-        render_vineyard_current_dashboard()
+    else:  # HerbalVineyard
+        render_herbalvineyard_current_dashboard()
 
 if __name__ == "__main__":
     main()
