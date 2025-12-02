@@ -667,13 +667,14 @@ def render_historical_dashboard(brand_name: str = "Vineyard things"):
         )
 
 
-def render_vineyard_historical_dashboard():
-    """Render historical dashboard for Vineyard things."""
-    render_historical_dashboard("Vineyard things")
+def render_vineyard_current_dashboard():
+    """Render current dashboard for Vineyard things (placeholder - no data yet)."""
+    st.title("Vineyard things Performance Dashboard")
+    st.info("📊 This page will be updated when we have data for Vineyard things.")
 
 
 def main():
-    # Brand and mode selector in sidebar
+    # Brand selector in sidebar
     with st.sidebar:
         st.header("⚙️ Settings")
         brand = st.selectbox(
@@ -681,30 +682,12 @@ def main():
             ["Trueseamoss", "Vineyard things"],
             help="Choose the brand/account to analyze"
         )
-        
-        if brand == "Trueseamoss":
-            mode = st.radio(
-                "Select Mode",
-                ["Current"],
-                help="Current: Daily updated data with manual BSR entries"
-            )
-        else:  # Vineyard things
-            mode = st.radio(
-                "Select Mode",
-                ["Historical"],
-                help="Historical: 90 days historical data"
-            )
     
-    # Render appropriate dashboard based on brand and mode
+    # Render appropriate dashboard based on brand (only current data)
     if brand == "Trueseamoss":
-        if mode == "Current":
-            render_current_mode_dashboard()
-        # Historical mode commented out for Trueseamoss
-        # else:
-        #     render_historical_dashboard("Trueseamoss")
+        render_current_mode_dashboard()
     else:  # Vineyard things
-        if mode == "Historical":
-            render_vineyard_historical_dashboard()
+        render_vineyard_current_dashboard()
 
 if __name__ == "__main__":
     main()
