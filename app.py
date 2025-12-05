@@ -34,6 +34,8 @@ from tiktok_utils import (
     create_video_growth_scatter,
     RECENT_CORE_DATA_PATH,
     VIDEO_DETAILS_DATA_PATH,
+    get_brand_core_path,
+    get_brand_video_details_path,
 )
 
 APP_VERSION = "2025-11-16-2"
@@ -78,9 +80,10 @@ def render_bsr_edit_modal(edit_date: str = None, edit_bsr: float = None):
                     st.error("Failed to save BSR entry")
 
 
-def render_current_mode_dashboard():
+def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     """Render dashboard for current mode."""
-    st.title("True Sea Moss Performance Dashboard - Current Mode")
+    brand_title = "True Sea Moss" if brand == "Trueseamoss" else brand
+    st.title(f"{brand_title} Performance Dashboard - Current Mode")
     st.caption("Daily updated view counts with manual BSR entries.")
     
     # Initialize session state for current views file path and Google Sheets URL
@@ -165,9 +168,18 @@ def render_current_mode_dashboard():
                 st.caption(f"💡 Default: `{CURRENT_VIEWS_PATH}`")
                 st.caption("💡 Tip: Your daily script should write to this file path")
     
-    # Load latest 7-day core CSV for merging and reporting
-    core_df = load_recent_core_data(RECENT_CORE_DATA_PATH)
-    details_df = load_video_details_long(VIDEO_DETAILS_DATA_PATH)
+    # Load latest 7-day core CSV for merging and reporting (brand-specific)
+    brand_core_path = get_brand_core_path(brand)
+    brand_video_details_path = get_brand_video_details_path(brand)
+    
+    # Fallback to default paths for Trueseamoss if brand-specific doesn't exist
+    if brand == "Trueseamoss" and not brand_core_path.exists():
+        brand_core_path = RECENT_CORE_DATA_PATH
+    if brand == "Trueseamoss" and not brand_video_details_path.exists():
+        brand_video_details_path = VIDEO_DETAILS_DATA_PATH
+    
+    core_df = load_recent_core_data(brand_core_path)
+    details_df = load_video_details_long(brand_video_details_path)
     summary_df = summarize_video_details(details_df) if not details_df.empty else pd.DataFrame()
     
     # Determine data source and load data
@@ -232,7 +244,8 @@ def render_current_mode_dashboard():
 
     df = create_current_dataset(source_df, core_df, manual_entries)
     
-    if df.empty:
+    if df.empty and core_df.empty:
+        # Only show empty message if we truly have no data
         if st.session_state.use_google_sheets:
             st.info(
                 "📊 No rows detected in the linked Google Sheet. "
@@ -253,7 +266,15 @@ def render_current_mode_dashboard():
             entries_df = pd.DataFrame(manual_entries)
             entries_df.columns = ["Date", "BSR"]
             st.dataframe(entries_df, use_container_width=True, hide_index=True)
+        
         return
+    
+    # If df is empty but we have core data, show info message
+    if df.empty and not core_df.empty:
+        st.info(
+            f"📊 Core data loaded from `data/{brand_core_path.name}`, but no daily view changes detected. "
+            "Showing core aggregate data below."
+        )
     
     # Show manual BSR entries management
     if manual_entries:
@@ -545,19 +566,19 @@ def render_current_mode_dashboard():
             st.caption("No videos match the current filters. Try lowering the thresholds.")
     else:
         st.caption(
-            f"Add the 'Original Video Details' export to `data/{VIDEO_DETAILS_DATA_PATH.name}` to see individual video performance."
+            f"Add the 'Original Video Details' export to `data/{brand_video_details_path.name}` to see individual video performance."
         )
 
     st.divider()
     st.markdown("### 7-Day Core Export (CSV)")
     if core_df.empty:
         st.caption(
-            f"Drop the latest 'Core' CSV into `data/{RECENT_CORE_DATA_PATH.name}` to populate this section."
+            f"Drop the latest 'Core' CSV into `data/{brand_core_path.name}` to populate this section."
         )
     else:
         core_display = core_df.copy()
         core_display["Date"] = core_display["Date"].dt.strftime("%Y-%m-%d")
-        st.caption(f"Source: `data/{RECENT_CORE_DATA_PATH.name}`")
+        st.caption(f"Source: `data/{brand_core_path.name}`")
         st.dataframe(core_display, use_container_width=True, hide_index=True)
 
         latest_core = core_df.iloc[-1]
@@ -654,11 +675,11 @@ def render_historical_dashboard(brand_name: str = "Vineyard things"):
     corr_df = df[["total_views", "BSR Amazon"]].apply(pd.to_numeric, errors="coerce").dropna()
     if not corr_df.empty:
         correlation = corr_df["total_views"].corr(-corr_df["BSR Amazon"])
-        st.metric(
+    st.metric(
         "Correlation (Views vs BSR improvement)",
         f"{correlation:.2f}",
         help="Positive correlation indicates higher TikTok views correspond with better (lower) BSR values.",
-        )
+    )
     else:
         st.metric(
             "Correlation (Views vs BSR improvement)",
@@ -668,9 +689,9 @@ def render_historical_dashboard(brand_name: str = "Vineyard things"):
 
 
 def render_herbalvineyard_current_dashboard():
-    """Render current dashboard for HerbalVineyard (placeholder - no data yet)."""
-    st.title("HerbalVineyard Performance Dashboard")
-    st.info("📊 This page will be updated when we have data for HerbalVineyard.")
+    """Render current dashboard for HerbalVineyard using brand-specific data."""
+    # Use the same dashboard function but with HerbalVineyard brand
+    render_current_mode_dashboard(brand="HerbalVineyard")
 
 
 def main():
@@ -685,7 +706,7 @@ def main():
     
     # Render appropriate dashboard based on brand (only current data)
     if brand == "Trueseamoss":
-        render_current_mode_dashboard()
+        render_current_mode_dashboard(brand="Trueseamoss")
     else:  # HerbalVineyard
         render_herbalvineyard_current_dashboard()
 

@@ -35,6 +35,17 @@ RECENT_CORE_DATA_PATH = DATA_DIR / RECENT_CORE_FILENAME
 VIDEO_DETAILS_FILENAME = "tiktok_video_details_latest.csv"
 VIDEO_DETAILS_DATA_PATH = DATA_DIR / VIDEO_DETAILS_FILENAME
 
+# Brand-specific data paths
+def get_brand_core_path(brand: str) -> Path:
+    """Get core data path for a specific brand."""
+    brand_normalized = brand.lower().replace(" ", "_")
+    return DATA_DIR / f"tiktok_core_{brand_normalized}.csv"
+
+def get_brand_video_details_path(brand: str) -> Path:
+    """Get video details path for a specific brand."""
+    brand_normalized = brand.lower().replace(" ", "_")
+    return DATA_DIR / f"tiktok_video_details_{brand_normalized}.csv"
+
 
 def _ensure_dataset(csv_path: Path) -> Path:
     csv_path = Path(csv_path)
