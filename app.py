@@ -384,9 +384,8 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     st.divider()
     st.markdown("### Individual TikTok Videos")
     
-    # Load video details data
-    details_df = load_video_details_long(VIDEO_DETAILS_DATA_PATH)
-    summary_df = summarize_video_details(details_df) if not details_df.empty else pd.DataFrame()
+    # Video details data is already loaded at the top with brand-specific path
+    # Re-summarize if needed (details_df and summary_df are already computed above)
     
     # Pre-compute lookups for video metrics
     details_lookup = {}
