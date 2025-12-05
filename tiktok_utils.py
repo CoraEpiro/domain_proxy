@@ -1378,22 +1378,43 @@ def _init_db():
             # Migrate from JSON once if table is empty and JSON exists
             cur = conn.execute("SELECT COUNT(*) FROM manual_bsr")
             count = cur.fetchone()[0] or 0
-            if count == 0 and BSR_MANUAL_ENTRIES_PATH.exists():
-                try:
-                    with open(BSR_MANUAL_ENTRIES_PATH, "r") as f:
-                        data = json.load(f)
-                        if isinstance(data, list):
-                            for entry in data:
-                                d = entry.get("date")
-                                b = entry.get("bsr")
-                                if d is not None and b is not None:
-                                    conn.execute(
-                                        "INSERT OR REPLACE INTO manual_bsr(date, brand, bsr) VALUES(?, ?, ?)",
-                                        (str(d), "Trueseamoss", float(b)),
-                                    )
-                            conn.commit()
-                except Exception:
-                    pass
+            if count == 0:
+                # Seed initial BSR data for both brands
+                initial_bsr_data = [
+                    # Trueseamoss BSR data
+                    ("2025-11-30", "Trueseamoss", 86.0),
+                    ("2025-12-01", "Trueseamoss", 84.0),
+                    ("2025-12-02", "Trueseamoss", 90.0),
+                    ("2025-12-03", "Trueseamoss", 92.0),
+                    # HerbalVineyard BSR data
+                    ("2025-12-01", "HerbalVineyard", 22201.0),
+                    ("2025-12-02", "HerbalVineyard", 22506.0),
+                    ("2025-12-03", "HerbalVineyard", 19050.0),
+                ]
+                for date, brand, bsr in initial_bsr_data:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO manual_bsr(date, brand, bsr) VALUES(?, ?, ?)",
+                        (date, brand, bsr)
+                    )
+                conn.commit()
+                
+                # Also try to migrate from JSON if it exists (legacy support)
+                if BSR_MANUAL_ENTRIES_PATH.exists():
+                    try:
+                        with open(BSR_MANUAL_ENTRIES_PATH, "r") as f:
+                            data = json.load(f)
+                            if isinstance(data, list):
+                                for entry in data:
+                                    d = entry.get("date")
+                                    b = entry.get("bsr")
+                                    if d is not None and b is not None:
+                                        conn.execute(
+                                            "INSERT OR REPLACE INTO manual_bsr(date, brand, bsr) VALUES(?, ?, ?)",
+                                            (str(d), "Trueseamoss", float(b)),
+                                        )
+                                conn.commit()
+                    except Exception:
+                        pass
     except Exception:
         pass
 
