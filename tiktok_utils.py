@@ -188,13 +188,19 @@ def _core_to_current_frame(core_df: pd.DataFrame | None) -> pd.DataFrame:
 
     if "Total Views" in df.columns:
         # Total Views are cumulative - convert to daily differences
-        cumulative_views = pd.to_numeric(df["Total Views"], errors="coerce")
-        # Calculate day-over-day difference (daily view change)
-        # First day gets 0 (no previous day to compare), rest get the difference
-        daily_views = cumulative_views.diff()
-        # For the first day, if we can't calculate diff, set to 0 or first day's value
-        if len(daily_views) > 0 and pd.isna(daily_views.iloc[0]):
-            daily_views.iloc[0] = 0
+        # Use Original Views + Repost Views differences for more accurate daily calculation
+        if "Original Views" in df.columns and "Repost Views" in df.columns:
+            original_views = pd.to_numeric(df["Original Views"], errors="coerce")
+            repost_views = pd.to_numeric(df["Repost Views"], errors="coerce")
+            # Calculate daily differences for each
+            original_daily = original_views.diff().fillna(0)
+            repost_daily = repost_views.diff().fillna(0)
+            # Sum to get total daily view change
+            daily_views = original_daily + repost_daily
+        else:
+            # Fallback to Total Views difference
+            cumulative_views = pd.to_numeric(df["Total Views"], errors="coerce")
+            daily_views = cumulative_views.diff().fillna(0)
         views_series = daily_views.fillna(0)
     else:
         view_cols = [
