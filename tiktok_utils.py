@@ -184,19 +184,31 @@ def _core_to_current_frame(core_df: pd.DataFrame | None) -> pd.DataFrame:
     df = core_df.copy()
     date_col = "Date" if "Date" in df.columns else df.columns[0]
     df[date_col] = _parse_tiktok_dates(df[date_col])
+    df = df.sort_values(date_col).reset_index(drop=True)
 
     if "Total Views" in df.columns:
-        views_series = pd.to_numeric(df["Total Views"], errors="coerce")
+        # Total Views are cumulative - convert to daily differences
+        cumulative_views = pd.to_numeric(df["Total Views"], errors="coerce")
+        # Calculate day-over-day difference (daily view change)
+        # First day gets 0 (no previous day to compare), rest get the difference
+        daily_views = cumulative_views.diff()
+        # For the first day, if we can't calculate diff, set to 0 or first day's value
+        if len(daily_views) > 0 and pd.isna(daily_views.iloc[0]):
+            daily_views.iloc[0] = 0
+        views_series = daily_views.fillna(0)
     else:
         view_cols = [
             col for col in df.columns if isinstance(col, str) and "view" in col.lower()
         ]
         if view_cols:
-            views_series = (
+            cumulative_views = (
                 df[view_cols]
                 .apply(pd.to_numeric, errors="coerce")
                 .sum(axis=1, skipna=True)
             )
+            # Convert cumulative to daily differences
+            daily_views = cumulative_views.diff().fillna(cumulative_views.iloc[0] if len(cumulative_views) > 0 and pd.notna(cumulative_views.iloc[0]) else 0)
+            views_series = daily_views
         else:
             views_series = pd.Series(
                 [float("nan")] * len(df), index=df.index, dtype="float64"

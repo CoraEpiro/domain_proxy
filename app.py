@@ -295,13 +295,16 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                             st.success("Deleted!")
                             st.rerun()
     
+    # Group by date - total_views should already be daily differences (not cumulative)
     daily_summary = (
         df.groupby(df["date"].dt.floor("D"))
         .agg({"total_views": "sum", "BSR Amazon": "mean"})
         .reset_index()
         .sort_values("date")
     )
-    daily_summary["views_change"] = daily_summary["total_views"].diff()
+    # If total_views are already daily differences, use them directly as views_change
+    # Otherwise, calculate diff if they're cumulative (shouldn't happen after our fix)
+    daily_summary["views_change"] = daily_summary["total_views"]
 
     daily_views = daily_summary[["date", "views_change", "BSR Amazon"]].rename(
         columns={"date": "Date", "views_change": "Views", "BSR Amazon": "Average BSR"}
