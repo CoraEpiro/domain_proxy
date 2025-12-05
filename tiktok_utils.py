@@ -278,14 +278,25 @@ def create_current_dataset(
 
     combined = _apply_manual_bsr(combined, manual_entries)
 
+    # Don't filter by core date range if we have manual BSR entries outside that range
+    # Manual BSR entries should always be included
     if core_df is not None and not core_df.empty and "Date" in core_df.columns:
         core_dates = pd.to_datetime(core_df["Date"], errors="coerce").dropna()
         if not core_dates.empty:
             min_core = core_dates.min()
             max_core = core_dates.max()
-            combined = combined[
-                (combined["date"] >= min_core) & (combined["date"] <= max_core)
-            ]
+            # Get dates from manual entries to ensure they're not filtered out
+            manual_entry_dates = set()
+            if manual_entries:
+                for entry in manual_entries:
+                    entry_date = pd.to_datetime(entry.get("date"), errors="coerce")
+                    if pd.notna(entry_date):
+                        manual_entry_dates.add(entry_date.normalize())
+            
+            # Filter, but keep manual BSR entry dates
+            date_mask = (combined["date"] >= min_core) & (combined["date"] <= max_core)
+            manual_mask = combined["date"].dt.normalize().isin(manual_entry_dates)
+            combined = combined[date_mask | manual_mask]
 
     combined = combined.sort_values("date")
     return combined.reset_index(drop=True)
