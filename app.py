@@ -48,7 +48,7 @@ st.set_page_config(
 )
 
 
-def render_bsr_edit_modal(edit_date: str = None, edit_bsr: float = None):
+def render_bsr_edit_modal(edit_date: str = None, edit_bsr: float = None, brand: str = "Trueseamoss"):
     """Render BSR add/edit modal using Streamlit's form and columns."""
     expanded = edit_date is not None
     title = f"✏️ Edit BSR ({edit_date})" if edit_date else "➕ Add/Edit BSR"
@@ -69,7 +69,7 @@ def render_bsr_edit_modal(edit_date: str = None, edit_bsr: float = None):
             submitted = st.form_submit_button("Save BSR", use_container_width=True)
             if submitted:
                 date_str = bsr_date.strftime("%Y-%m-%d")
-                if save_manual_bsr_entry(date_str, bsr_value):
+                if save_manual_bsr_entry(date_str, bsr_value, brand):
                     st.success(f"BSR {bsr_value} saved for {date_str}")
                     # Clear edit state
                     for key in list(st.session_state.keys()):
@@ -218,7 +218,7 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     
     # Determine if we're editing an entry
     edit_entry = None
-    manual_entries = load_manual_bsr_entries()
+    manual_entries = load_manual_bsr_entries(brand)
     for key in st.session_state.keys():
         if key.startswith("edit_bsr_"):
             idx = int(key.split("_")[-1])
@@ -228,9 +228,9 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     
     with col3:
         if edit_entry:
-            render_bsr_edit_modal(edit_entry["date"], edit_entry["bsr"])
+            render_bsr_edit_modal(edit_entry["date"], edit_entry["bsr"], brand)
         else:
-            render_bsr_edit_modal()
+            render_bsr_edit_modal(brand=brand)
 
     # Persistence is automatic via SQLite (no manual backup UI)
     
@@ -260,7 +260,7 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
             )
         
         # Show manual BSR entries if any
-        manual_entries = load_manual_bsr_entries()
+        manual_entries = load_manual_bsr_entries(brand)
         if manual_entries:
             st.markdown("### Manual BSR Entries")
             entries_df = pd.DataFrame(manual_entries)
@@ -291,7 +291,7 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                         st.rerun()
                 with col3:
                     if st.button("Delete", key=f"delete_{idx}"):
-                        if delete_manual_bsr_entry(row['Date']):
+                        if delete_manual_bsr_entry(row['Date'], brand):
                             st.success("Deleted!")
                             st.rerun()
     

@@ -1329,14 +1329,52 @@ def _init_db():
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(DB_PATH) as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS manual_bsr (
-                    date TEXT PRIMARY KEY,
-                    bsr REAL
+            # Check if table exists and what columns it has
+            cursor = conn.execute("PRAGMA table_info(manual_bsr)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            if not columns:
+                # Table doesn't exist, create with brand support
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS manual_bsr (
+                        date TEXT,
+                        brand TEXT DEFAULT 'Trueseamoss',
+                        bsr REAL,
+                        PRIMARY KEY (date, brand)
+                    )
+                    """
                 )
-                """
-            )
+            elif "brand" not in columns:
+                # Table exists but doesn't have brand column - migrate
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS manual_bsr_new (
+                        date TEXT,
+                        brand TEXT DEFAULT 'Trueseamoss',
+                        bsr REAL,
+                        PRIMARY KEY (date, brand)
+                    )
+                """)
+                conn.execute("""
+                    INSERT INTO manual_bsr_new (date, brand, bsr)
+                    SELECT date, 'Trueseamoss', bsr FROM manual_bsr
+                """)
+                conn.execute("DROP TABLE manual_bsr")
+                conn.execute("ALTER TABLE manual_bsr_new RENAME TO manual_bsr")
+                conn.commit()
+            else:
+                # Table exists with brand column, just ensure it exists
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS manual_bsr (
+                        date TEXT,
+                        brand TEXT DEFAULT 'Trueseamoss',
+                        bsr REAL,
+                        PRIMARY KEY (date, brand)
+                    )
+                    """
+                )
+            
             # Migrate from JSON once if table is empty and JSON exists
             cur = conn.execute("SELECT COUNT(*) FROM manual_bsr")
             count = cur.fetchone()[0] or 0
@@ -1350,8 +1388,8 @@ def _init_db():
                                 b = entry.get("bsr")
                                 if d is not None and b is not None:
                                     conn.execute(
-                                        "INSERT OR REPLACE INTO manual_bsr(date, bsr) VALUES(?, ?)",
-                                        (str(d), float(b)),
+                                        "INSERT OR REPLACE INTO manual_bsr(date, brand, bsr) VALUES(?, ?, ?)",
+                                        (str(d), "Trueseamoss", float(b)),
                                     )
                             conn.commit()
                 except Exception:
@@ -1360,16 +1398,19 @@ def _init_db():
         pass
 
 
-def load_manual_bsr_entries() -> list:
-    """Load manual BSR entries from SQLite (migrates JSON if needed)."""
+def load_manual_bsr_entries(brand: str = "Trueseamoss") -> list:
+    """Load manual BSR entries from SQLite for a specific brand (migrates JSON if needed)."""
     _init_db()
     try:
         with sqlite3.connect(DB_PATH) as conn:
-            rows = conn.execute("SELECT date, bsr FROM manual_bsr ORDER BY date").fetchall()
+            rows = conn.execute(
+                "SELECT date, bsr FROM manual_bsr WHERE brand = ? ORDER BY date",
+                (brand,)
+            ).fetchall()
             return [{"date": r[0], "bsr": float(r[1]) if r[1] is not None else None} for r in rows]
     except Exception:
-        # Fallback to JSON (legacy)
-        if not BSR_MANUAL_ENTRIES_PATH.exists():
+        # Fallback to JSON (legacy) - only for Trueseamoss
+        if brand != "Trueseamoss" or not BSR_MANUAL_ENTRIES_PATH.exists():
             return []
         try:
             with open(BSR_MANUAL_ENTRIES_PATH, "r") as f:
@@ -1378,14 +1419,14 @@ def load_manual_bsr_entries() -> list:
             return []
 
 
-def save_manual_bsr_entry(date: str, bsr: float) -> bool:
-    """Upsert a manual BSR entry into SQLite."""
+def save_manual_bsr_entry(date: str, bsr: float, brand: str = "Trueseamoss") -> bool:
+    """Upsert a manual BSR entry into SQLite for a specific brand."""
     _init_db()
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO manual_bsr(date, bsr) VALUES(?, ?)",
-                (str(date), float(bsr)),
+                "INSERT OR REPLACE INTO manual_bsr(date, brand, bsr) VALUES(?, ?, ?)",
+                (str(date), brand, float(bsr)),
             )
             conn.commit()
         return True
@@ -1393,12 +1434,12 @@ def save_manual_bsr_entry(date: str, bsr: float) -> bool:
         return False
 
 
-def delete_manual_bsr_entry(date: str) -> bool:
-    """Delete a manual BSR entry from SQLite."""
+def delete_manual_bsr_entry(date: str, brand: str = "Trueseamoss") -> bool:
+    """Delete a manual BSR entry from SQLite for a specific brand."""
     _init_db()
     try:
         with sqlite3.connect(DB_PATH) as conn:
-            conn.execute("DELETE FROM manual_bsr WHERE date = ?", (str(date),))
+            conn.execute("DELETE FROM manual_bsr WHERE date = ? AND brand = ?", (str(date), brand))
             conn.commit()
         return True
     except Exception:
