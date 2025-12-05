@@ -418,10 +418,10 @@ def create_views_line_chart(df: pd.DataFrame) -> go.Figure | None:
         df,
         x="date",
         y="total_views",
-        title="TikTok Views Over Time",
+        title="Daily View Changes",
         markers=True,
     )
-    fig.update_layout(xaxis_title="Date", yaxis_title="Views", template="plotly_white")
+    fig.update_layout(xaxis_title="Date", yaxis_title="Daily View Changes", template="plotly_white")
     return fig
 
 
