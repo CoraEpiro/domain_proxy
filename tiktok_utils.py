@@ -239,6 +239,8 @@ def _core_to_current_frame(core_df: pd.DataFrame | None) -> pd.DataFrame:
         }
     )
     current = current.dropna(subset=["date"])
+    # Filter out days with zero views (e.g., first day when calculating differences)
+    current = current[current["total_views"] > 0]
     return current
 
 
