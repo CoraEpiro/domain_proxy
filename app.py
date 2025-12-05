@@ -409,11 +409,12 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
             filter_col1, filter_col2, filter_col3 = st.columns(3)
             with filter_col1:
                 min_latest_views = st.number_input(
-                    "Min latest views", min_value=0, value=50000, step=1000
+                    "Min latest views", min_value=0, value=0, step=1000,
+                    help="Filter videos by minimum total views"
                 )
             with filter_col2:
                 min_daily_change = st.number_input(
-                    "Min daily views change", min_value=0, value=5000, step=500,
+                    "Min daily views change", min_value=0, value=0, step=500,
                     help="Minimum average daily view increment"
                 )
             with filter_col3:
@@ -439,6 +440,12 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
             & (filtered["avg_daily_views"].fillna(0) >= min_daily_change)
         ]
         filtered = filtered.sort_values("avg_daily_views", ascending=False)
+        
+        # Show summary of filtered results
+        total_videos = len(summary_df)
+        filtered_count = len(filtered)
+        if total_videos > 0:
+            st.caption(f"📹 Showing {filtered_count} of {total_videos} videos (use filters above to adjust)")
         
         if not filtered.empty:
             # Display videos with embeds and metrics
