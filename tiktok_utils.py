@@ -1386,7 +1386,7 @@ def _init_db():
                     """
                 )
             
-            # Always ensure initial BSR data exists (seed if missing)
+            # Always ensure initial BSR data exists with correct values (use INSERT OR REPLACE)
             initial_bsr_data = [
                 # Trueseamoss BSR data
                 ("2025-11-30", "Trueseamoss", 86.0),
@@ -1399,16 +1399,11 @@ def _init_db():
                 ("2025-12-03", "HerbalVineyard", 19050.0),
             ]
             for date, brand, bsr in initial_bsr_data:
-                # Check if entry exists, if not, insert it
-                existing = conn.execute(
-                    "SELECT COUNT(*) FROM manual_bsr WHERE date = ? AND brand = ?",
-                    (date, brand)
-                ).fetchone()[0]
-                if existing == 0:
-                    conn.execute(
-                        "INSERT INTO manual_bsr(date, brand, bsr) VALUES(?, ?, ?)",
-                        (date, brand, bsr)
-                    )
+                # Use INSERT OR REPLACE to ensure correct values (overwrites if exists)
+                conn.execute(
+                    "INSERT OR REPLACE INTO manual_bsr(date, brand, bsr) VALUES(?, ?, ?)",
+                    (date, brand, bsr)
+                )
             conn.commit()
             
             # Migrate from JSON once if table was empty and JSON exists (legacy support)
