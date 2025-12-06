@@ -71,10 +71,12 @@ def render_bsr_edit_modal(edit_date: str = None, edit_bsr: float = None, brand: 
                 date_str = bsr_date.strftime("%Y-%m-%d")
                 if save_manual_bsr_entry(date_str, bsr_value, brand):
                     st.success(f"BSR {bsr_value} saved for {date_str}")
-                    # Clear edit state
+                    # Clear edit state and caches
                     for key in list(st.session_state.keys()):
-                        if key.startswith("edit_bsr_"):
+                        if key.startswith("edit_bsr_") or key.startswith("embed_") or key.startswith("details_lookup_"):
                             del st.session_state[key]
+                    # Clear dataset cache
+                    create_current_dataset.clear()
                     st.rerun()
                 else:
                     st.error("Failed to save BSR entry")
@@ -219,13 +221,13 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
             else:
                 st.warning("⚠️ Invalid Google Sheets URL")
         else:
-            if current_file_path.exists():
+            if current_file_path and current_file_path.exists():
                 mod_time = get_file_modification_time(current_file_path)
                 if mod_time:
                     st.caption(f"📄 Last updated: {mod_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 else:
                     st.caption(f"📄 File found: `{current_file_path.name}`")
-            else:
+            elif current_file_path:
                 st.warning(f"⚠️ File not found at `{current_file_path}`")
                 st.info("👆 Use 'Configure Data Source' above to upload a file or set the path")
     
@@ -256,20 +258,20 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
 
     # Persistence is automatic via SQLite (no manual backup UI)
     
-    # Load current data with error handling
+    # Load current data with error handling (no spinner to avoid persistent RUNNING state)
     try:
-        with st.spinner("Loading data..."):
-            if st.session_state.use_google_sheets:
-                source_df = load_current_views_data_from_google_sheets(
-                    st.session_state.current_views_google_sheets_url
-                )
-            else:
-                source_df = load_current_views_data(current_file_path)
+        if st.session_state.use_google_sheets:
+            source_df = load_current_views_data_from_google_sheets(
+                st.session_state.current_views_google_sheets_url
+            )
+        else:
+            source_df = load_current_views_data(current_file_path)
     except Exception as e:
         st.error(f"Error loading data: {e}")
         source_df = pd.DataFrame()
     
     try:
+        # Create dataset (cached, so should be fast after first run)
         df = create_current_dataset(source_df, core_df, manual_entries)
     except Exception as e:
         st.error(f"Error creating dataset: {e}")
@@ -419,12 +421,17 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     # Video details data is already loaded at the top with brand-specific path
     # Re-summarize if needed (details_df and summary_df are already computed above)
     
-    # Pre-compute lookups for video metrics
+    # Pre-compute lookups for video metrics (build once, reuse)
     details_lookup = {}
     if not details_df.empty and "video_id" in details_df.columns:
-        for vid, group in details_df.groupby("video_id"):
-            # Store with string key for consistent lookup
-            details_lookup[str(vid)] = group.sort_values("date")
+        # Cache this in session state to avoid recomputation
+        cache_key = f"details_lookup_{brand}_{hash(str(details_df.shape))}"
+        if cache_key not in st.session_state:
+            for vid, group in details_df.groupby("video_id"):
+                details_lookup[str(vid)] = group.sort_values("date")
+            st.session_state[cache_key] = details_lookup
+        else:
+            details_lookup = st.session_state[cache_key]
     summary_lookup = summary_df.set_index("video_id") if not summary_df.empty else pd.DataFrame()
     
     # Show outstanding videos from CSV with filters
@@ -479,6 +486,12 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         if total_videos > 0:
             st.caption(f"📹 Showing {filtered_count} of {total_videos} videos (use filters above to adjust)")
         
+        # Limit number of videos rendered to prevent lag (show top 10 by default)
+        max_videos_to_show = 10
+        if filtered_count > max_videos_to_show:
+            st.info(f"💡 Showing top {max_videos_to_show} videos to improve performance. Use filters to narrow down results.")
+            filtered = filtered.head(max_videos_to_show)
+        
         if not filtered.empty:
             # Display videos with embeds and metrics
             import streamlit.components.v1 as components  # type: ignore
@@ -501,7 +514,14 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 col_video, col_chart = st.columns([1, 2])
                 
                 with col_video:
-                    embed_html = get_tiktok_oembed_html(video_url)
+                    # Cache embed HTML to avoid regenerating on every render
+                    embed_cache_key = f"embed_{video_id}"
+                    if embed_cache_key not in st.session_state:
+                        embed_html = get_tiktok_oembed_html(video_url)
+                        st.session_state[embed_cache_key] = embed_html
+                    else:
+                        embed_html = st.session_state[embed_cache_key]
+                    
                     full_html = f'''
                     <div style="display: flex; justify-content: center; margin: 20px 0; width: 100%;">
                         {embed_html}
@@ -742,14 +762,20 @@ def main():
         brand = st.selectbox(
             "Select Brand",
             ["Trueseamoss", "HerbalVineyard"],
-            help="Choose the brand/account to analyze"
+            help="Choose the brand/account to analyze",
+            key="brand_selector"
         )
     
     # Render appropriate dashboard based on brand (only current data)
-    if brand == "Trueseamoss":
-        render_current_mode_dashboard(brand="Trueseamoss")
-    else:  # HerbalVineyard
-        render_herbalvineyard_current_dashboard()
+    # Use try-except to catch any errors that might cause persistent RUNNING state
+    try:
+        if brand == "Trueseamoss":
+            render_current_mode_dashboard(brand="Trueseamoss")
+        else:  # HerbalVineyard
+            render_herbalvineyard_current_dashboard()
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
+        st.info("Please refresh the page or try again.")
 
 if __name__ == "__main__":
     main()

@@ -278,6 +278,7 @@ def _apply_manual_bsr(
     return result
 
 
+@st.cache_data(ttl=60)  # Cache for 1 minute
 def create_current_dataset(
     primary_df: pd.DataFrame | None,
     core_df: pd.DataFrame | None,
