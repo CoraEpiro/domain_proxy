@@ -1,6 +1,6 @@
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
+import pandas as pd  # type: ignore
+import plotly.express as px  # type: ignore
+import plotly.graph_objects as go  # type: ignore
 from datetime import datetime, date
 from pathlib import Path
 import shutil
@@ -10,9 +10,11 @@ import re
 import urllib.parse
 import urllib.request
 from io import BytesIO
-from openpyxl import load_workbook
+from openpyxl import load_workbook  # type: ignore
 import sqlite3
 import logging
+import streamlit as st  # type: ignore
+import socket
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -141,6 +143,7 @@ def load_views_bsr_data(csv_path: Path = TIKTOK_DATA_PATH) -> pd.DataFrame:
     return df[["date", "total_views", "BSR Amazon"]]
 
 
+@st.cache_data(ttl=300)  # Cache for 5 minutes
 def load_recent_core_data(csv_path: Path = RECENT_CORE_DATA_PATH) -> pd.DataFrame:
     """Load the 7-day core export (Original/Repost/Total metrics)."""
     csv_path = Path(csv_path)
@@ -558,6 +561,7 @@ def create_video_growth_scatter(summary_df: pd.DataFrame) -> go.Figure | None:
     return fig
 
 
+@st.cache_data(ttl=300)  # Cache for 5 minutes
 def load_current_views_data(csv_path: Path = CURRENT_VIEWS_PATH) -> pd.DataFrame:
     """Load current mode views data from daily updated file.
     
@@ -757,6 +761,7 @@ def get_google_sheets_csv_url(sheet_id: str, gid: Optional[str] = None) -> str:
     return base_url
 
 
+@st.cache_data(ttl=60)  # Cache for 1 minute (shorter for live data)
 def load_current_views_data_from_google_sheets(url: str) -> pd.DataFrame:
     """Load current mode views data from Google Sheets URL."""
     try:
@@ -766,6 +771,9 @@ def load_current_views_data_from_google_sheets(url: str) -> pd.DataFrame:
             return pd.DataFrame()
         # Convert to CSV export URL
         csv_url = get_google_sheets_csv_url(parsed["sheet_id"], parsed.get("gid"))
+        
+        # Set timeout for network requests
+        socket.setdefaulttimeout(10)  # 10 second timeout
 
         def _has_date_column(frame: pd.DataFrame) -> bool:
             return any(
@@ -782,14 +790,16 @@ def load_current_views_data_from_google_sheets(url: str) -> pd.DataFrame:
                 if _has_date_column(candidate):
                     df_raw = candidate
                     break
-            except Exception:
+            except Exception as e:
+                logging.warning(f"Error reading CSV with header={header}: {e}")
                 continue
 
         if df_raw.empty:
             try:
                 raw = pd.read_csv(csv_url, header=None)
                 raw = raw.dropna(how="all")
-            except Exception:
+            except Exception as e:
+                logging.warning(f"Error reading CSV without header: {e}")
                 return pd.DataFrame()
             header_row_idx = None
             for idx in range(min(15, len(raw))):
@@ -941,6 +951,7 @@ def get_tiktok_oembed_html(url: str) -> str:
     return embed_html
 
 
+@st.cache_data(ttl=300)  # Cache for 5 minutes
 def load_video_details_long(csv_path: Path = VIDEO_DETAILS_DATA_PATH) -> pd.DataFrame:
     """Load the video-details export and reshape it into a long dataframe."""
     csv_path = Path(csv_path)
@@ -1063,6 +1074,7 @@ def summarize_video_details(details_df: pd.DataFrame) -> pd.DataFrame:
     return metrics
 
 
+@st.cache_data(ttl=300)  # Cache for 5 minutes
 def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[str] = None) -> dict:
     """Return mapping of date (pd.Timestamp normalized to day) -> list of TikTok URLs found on that row.
     IMPORTANT: We use the XLSX export so we can read real cell hyperlinks (CSV loses links).
@@ -1079,12 +1091,19 @@ def get_date_to_tiktok_urls_from_google_sheets(url: str, sheet_name: Optional[st
             return mapping
         logger.info(f"Parsed sheet_id: {parsed['sheet_id']}, gid: {parsed.get('gid')}")
         
-        # Download XLSX
+        # Download XLSX with timeout
         xlsx_url = f"https://docs.google.com/spreadsheets/d/{parsed['sheet_id']}/export?format=xlsx"
         logger.info(f"Downloading XLSX from: {xlsx_url}")
-        with urllib.request.urlopen(xlsx_url) as resp:
-            content = resp.read()
-        logger.info(f"Downloaded {len(content)} bytes")
+        socket.setdefaulttimeout(15)  # 15 second timeout for XLSX download
+        try:
+            with urllib.request.urlopen(xlsx_url, timeout=15) as resp:
+                content = resp.read()
+            logger.info(f"Downloaded {len(content)} bytes")
+        except Exception as e:
+            logger.error(f"Error downloading XLSX: {e}")
+            return mapping
+        finally:
+            socket.setdefaulttimeout(None)
         
         # IMPORTANT: Don't use data_only=True - it strips hyperlinks!
         # Try with keep_links=True if available (openpyxl 3.1+)
@@ -1449,6 +1468,7 @@ def _init_db():
         pass
 
 
+@st.cache_data(ttl=60)  # Cache for 1 minute
 def load_manual_bsr_entries(brand: str = "Trueseamoss") -> list:
     """Load manual BSR entries from SQLite for a specific brand (migrates JSON if needed)."""
     _init_db()
@@ -1480,6 +1500,8 @@ def save_manual_bsr_entry(date: str, bsr: float, brand: str = "Trueseamoss") -> 
                 (str(date), brand, float(bsr)),
             )
             conn.commit()
+        # Clear cache to reflect new data
+        load_manual_bsr_entries.clear()
         return True
     except Exception:
         return False
@@ -1492,6 +1514,8 @@ def delete_manual_bsr_entry(date: str, brand: str = "Trueseamoss") -> bool:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute("DELETE FROM manual_bsr WHERE date = ? AND brand = ?", (str(date), brand))
             conn.commit()
+        # Clear cache to reflect deleted data
+        load_manual_bsr_entries.clear()
         return True
     except Exception:
         return False

@@ -1,5 +1,5 @@
-import streamlit as st
-import pandas as pd
+import streamlit as st  # type: ignore
+import pandas as pd  # type: ignore
 from datetime import datetime, date
 from pathlib import Path
 
@@ -120,6 +120,8 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 if parse_google_sheets_url(google_sheets_url):
                     st.session_state.current_views_google_sheets_url = google_sheets_url
                     st.session_state.current_views_sheet_name = sheet_name_input or "Core"
+                    # Clear cache to reload data
+                    load_current_views_data_from_google_sheets.clear()
                     st.success("✅ Google Sheets URL saved!")
                     st.rerun()
                 else:
@@ -149,6 +151,8 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                         with open(file_path, "wb") as f:
                             f.write(uploaded_file.getbuffer())
                         st.session_state.current_views_file_path = str(file_path)
+                        # Clear cache to reload data
+                        load_current_views_data.clear()
                         st.success(f"✅ File uploaded successfully to `{file_path.name}`")
                         st.rerun()
                     except Exception as e:
@@ -162,6 +166,8 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 )
                 if st.button("Save Path"):
                     st.session_state.current_views_file_path = file_path_input
+                    # Clear cache to reload data
+                    load_current_views_data.clear()
                     st.success("✅ Path saved!")
                     st.rerun()
                 
@@ -178,9 +184,20 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     if brand == "Trueseamoss" and not brand_video_details_path.exists():
         brand_video_details_path = VIDEO_DETAILS_DATA_PATH
     
-    core_df = load_recent_core_data(brand_core_path)
-    details_df = load_video_details_long(brand_video_details_path)
-    summary_df = summarize_video_details(details_df) if not details_df.empty else pd.DataFrame()
+    # Load core data with error handling
+    try:
+        core_df = load_recent_core_data(brand_core_path)
+    except Exception as e:
+        st.warning(f"Error loading core data: {e}")
+        core_df = pd.DataFrame()
+    
+    try:
+        details_df = load_video_details_long(brand_video_details_path)
+        summary_df = summarize_video_details(details_df) if not details_df.empty else pd.DataFrame()
+    except Exception as e:
+        st.warning(f"Error loading video details: {e}")
+        details_df = pd.DataFrame()
+        summary_df = pd.DataFrame()
     
     # Determine data source and load data
     if st.session_state.use_google_sheets:
@@ -214,6 +231,11 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     
     with col2:
         if st.button("🔄 Refresh Data", use_container_width=True):
+            # Clear all caches to force reload
+            load_current_views_data.clear()
+            load_current_views_data_from_google_sheets.clear()
+            load_recent_core_data.clear()
+            load_video_details_long.clear()
             st.rerun()
     
     # Determine if we're editing an entry
@@ -234,15 +256,24 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
 
     # Persistence is automatic via SQLite (no manual backup UI)
     
-    # Load current data
-    if st.session_state.use_google_sheets:
-        source_df = load_current_views_data_from_google_sheets(
-            st.session_state.current_views_google_sheets_url
-        )
-    else:
-        source_df = load_current_views_data(current_file_path)
-
-    df = create_current_dataset(source_df, core_df, manual_entries)
+    # Load current data with error handling
+    try:
+        with st.spinner("Loading data..."):
+            if st.session_state.use_google_sheets:
+                source_df = load_current_views_data_from_google_sheets(
+                    st.session_state.current_views_google_sheets_url
+                )
+            else:
+                source_df = load_current_views_data(current_file_path)
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        source_df = pd.DataFrame()
+    
+    try:
+        df = create_current_dataset(source_df, core_df, manual_entries)
+    except Exception as e:
+        st.error(f"Error creating dataset: {e}")
+        df = pd.DataFrame()
     
     if df.empty and core_df.empty:
         # Only show empty message if we truly have no data
@@ -288,7 +319,8 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 with col2:
                     if st.button("Edit", key=f"edit_{idx}"):
                         st.session_state[f"edit_bsr_{idx}"] = True
-                        st.rerun()
+                        # Use stop to prevent rerun loop
+                        st.stop()
                 with col3:
                     if st.button("Delete", key=f"delete_{idx}"):
                         if delete_manual_bsr_entry(row['Date'], brand):
@@ -449,8 +481,8 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         
         if not filtered.empty:
             # Display videos with embeds and metrics
-            import streamlit.components.v1 as components
-            import plotly.graph_objects as go
+            import streamlit.components.v1 as components  # type: ignore
+            import plotly.graph_objects as go  # type: ignore
             
             for _, row in filtered.iterrows():
                 video_id = str(row["video_id"])
