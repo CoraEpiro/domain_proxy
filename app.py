@@ -360,16 +360,22 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
             .sort_values("date")
         )
         
-        # CRITICAL FIX: Ensure manual BSR entries are applied to daily_summary
-        # Sometimes aggregation loses BSR values, so we explicitly set them
+        # CRITICAL FIX: Ensure ALL manual BSR entries are applied to daily_summary
+        # Force set BSR values from manual entries to override any aggregation issues
         for entry in manual_entries:
             entry_date = pd.to_datetime(entry.get("date"), errors="coerce")
             if pd.notna(entry_date):
                 entry_date_normalized = entry_date.normalize()
                 mask = daily_summary["date"].dt.normalize() == entry_date_normalized
                 if mask.any():
-                    # Force set the BSR value from manual entry
-                    daily_summary.loc[mask, "BSR Amazon"] = float(entry.get("bsr", pd.NA))
+                    # Force set the BSR value from manual entry - ensure it's a float
+                    bsr_val = entry.get("bsr")
+                    if bsr_val is not None:
+                        daily_summary.loc[mask, "BSR Amazon"] = float(bsr_val)
+        
+        # Ensure BSR column is numeric (not object)
+        daily_summary["BSR Amazon"] = pd.to_numeric(daily_summary["BSR Amazon"], errors="coerce")
+    
     # If total_views are already daily differences, use them directly as views_change
     # Otherwise, calculate diff if they're cumulative (shouldn't happen after our fix)
     daily_summary["views_change"] = daily_summary["total_views"].fillna(0)
@@ -384,8 +390,10 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     )
     daily_views["Date"] = daily_views["Date"].dt.strftime("%Y-%m-%d")
     daily_views["Views"] = daily_views["Views"].fillna(0)
-    # Keep BSR as float - don't convert to None, let Streamlit handle NaN display
-    # The values should already be there from aggregation
+    # Ensure BSR is numeric and properly formatted
+    daily_views["Average BSR"] = pd.to_numeric(daily_views["Average BSR"], errors="coerce")
+    # Round to integer for display (BSR values are whole numbers)
+    daily_views["Average BSR"] = daily_views["Average BSR"].round().astype("Int64")
     
     st.markdown("### Current Performance Dataset")
     st.caption("Daily view counts and manual BSR entries.")
