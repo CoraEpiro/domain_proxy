@@ -275,28 +275,6 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         st.error(f"Error loading data: {e}")
         source_df = pd.DataFrame()
     
-    # ALSO load historical BSR data to fill in missing dates
-    try:
-        from tiktok_utils import load_views_bsr_data, TIKTOK_DATA_PATH
-        historical_bsr_df = load_views_bsr_data(TIKTOK_DATA_PATH)
-        # Merge historical BSR data into source_df if it has BSR values
-        if not historical_bsr_df.empty and not source_df.empty:
-            # Only keep historical rows that have BSR data and are not already in source_df
-            historical_with_bsr = historical_bsr_df[historical_bsr_df["BSR Amazon"].notna()].copy()
-            if not historical_with_bsr.empty:
-                # Merge: keep source_df, but add BSR from historical where missing
-                source_df = pd.concat([source_df, historical_with_bsr], ignore_index=True)
-                # Drop duplicates by date, keeping the one with BSR if available
-                source_df = source_df.sort_values("BSR Amazon", na_position='last')
-                source_df = source_df.drop_duplicates(subset="date", keep="last")
-                source_df = source_df.sort_values("date")
-        elif not historical_bsr_df.empty and source_df.empty:
-            # If source_df is empty, use historical BSR data
-            source_df = historical_bsr_df[historical_bsr_df["BSR Amazon"].notna()].copy()
-    except Exception as e:
-        # If historical data fails to load, continue without it
-        pass
-    
     try:
         # Create dataset (cached, so should be fast after first run)
         # Pass manual_entries directly to ensure BSR data is included
