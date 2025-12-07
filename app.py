@@ -335,19 +335,23 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     
     # Group by date - total_views should already be daily differences (not cumulative)
     # Include all dates that have either views OR BSR data
-    # For BSR, use first non-null value (or mean if multiple non-null values exist)
-    def bsr_agg(series):
-        non_null = series.dropna()
-        if len(non_null) > 0:
-            return non_null.iloc[0] if len(non_null) == 1 else non_null.mean()
-        return pd.NA
-    
-    daily_summary = (
-        df.groupby(df["date"].dt.floor("D"))
-        .agg({"total_views": "sum", "BSR Amazon": bsr_agg})
-        .reset_index()
-        .sort_values("date")
-    )
+    # Check if df has the required columns before grouping
+    if df.empty or "date" not in df.columns:
+        daily_summary = pd.DataFrame(columns=["date", "total_views", "BSR Amazon", "views_change"])
+    else:
+        # For BSR, use first non-null value (or mean if multiple non-null values exist)
+        def bsr_agg(series):
+            non_null = series.dropna()
+            if len(non_null) > 0:
+                return non_null.iloc[0] if len(non_null) == 1 else non_null.mean()
+            return pd.NA
+        
+        daily_summary = (
+            df.groupby(df["date"].dt.floor("D"))
+            .agg({"total_views": "sum", "BSR Amazon": bsr_agg})
+            .reset_index()
+            .sort_values("date")
+        )
     # If total_views are already daily differences, use them directly as views_change
     # Otherwise, calculate diff if they're cumulative (shouldn't happen after our fix)
     daily_summary["views_change"] = daily_summary["total_views"].fillna(0)

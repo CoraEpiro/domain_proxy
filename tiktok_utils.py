@@ -270,8 +270,8 @@ def _apply_manual_bsr(
         entry_value = float(entry_value) if entry_value is not None else None
         mask = result["date"].dt.normalize() == entry_date.normalize()
         if mask.any():
-            # Explicitly set the BSR value - use .loc to avoid SettingWithCopyWarning
-            result = result.copy() if result.is_copy else result
+            # Explicitly set the BSR value - always copy to avoid SettingWithCopyWarning
+            result = result.copy()
             result.loc[mask, "BSR Amazon"] = entry_value
         else:
             # Add new row for BSR-only entry (no view data for this date)
