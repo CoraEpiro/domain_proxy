@@ -275,7 +275,17 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     
     try:
         # Create dataset (cached, so should be fast after first run)
+        # Pass manual_entries directly to ensure BSR data is included
         df = create_current_dataset(source_df, core_df, manual_entries)
+        # Debug: Check if Dec 4-5 have BSR
+        if not df.empty:
+            dec_4_5_check = df[df["date"].dt.date.isin([pd.Timestamp('2025-12-04').date(), pd.Timestamp('2025-12-05').date())]
+            if not dec_4_5_check.empty:
+                # Verify BSR is set
+                for _, row in dec_4_5_check.iterrows():
+                    if pd.isna(row.get("BSR Amazon")):
+                        # BSR is missing - this shouldn't happen if manual_entries were applied
+                        pass
     except Exception as e:
         st.error(f"Error creating dataset: {e}")
         df = pd.DataFrame()
@@ -361,10 +371,9 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     )
     daily_views["Date"] = daily_views["Date"].dt.strftime("%Y-%m-%d")
     daily_views["Views"] = daily_views["Views"].fillna(0)
-    # Ensure BSR values are properly formatted (not showing as None)
-    daily_views["Average BSR"] = daily_views["Average BSR"].apply(
-        lambda x: x if pd.notna(x) else None
-    )
+    # Ensure BSR values are properly formatted - convert NaN to None for display
+    # But first check if we have the values
+    daily_views["Average BSR"] = daily_views["Average BSR"].where(pd.notna(daily_views["Average BSR"]), None)
     
     st.markdown("### Current Performance Dataset")
     st.caption("Daily view counts and manual BSR entries.")
