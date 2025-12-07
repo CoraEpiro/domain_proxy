@@ -277,15 +277,6 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         # Create dataset (cached, so should be fast after first run)
         # Pass manual_entries directly to ensure BSR data is included
         df = create_current_dataset(source_df, core_df, manual_entries)
-        # Debug: Check if Dec 4-5 have BSR
-        if not df.empty:
-            dec_4_5_check = df[df["date"].dt.date.isin([pd.Timestamp('2025-12-04').date(), pd.Timestamp('2025-12-05').date())]
-            if not dec_4_5_check.empty:
-                # Verify BSR is set
-                for _, row in dec_4_5_check.iterrows():
-                    if pd.isna(row.get("BSR Amazon")):
-                        # BSR is missing - this shouldn't happen if manual_entries were applied
-                        pass
     except Exception as e:
         st.error(f"Error creating dataset: {e}")
         df = pd.DataFrame()
