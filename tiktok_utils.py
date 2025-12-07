@@ -262,27 +262,42 @@ def _apply_manual_bsr(
     if result.empty and not manual_entries:
         return result
 
+    # Ensure date column is datetime
+    if "date" in result.columns:
+        result["date"] = pd.to_datetime(result["date"], errors="coerce")
+    
     for entry in manual_entries:
-        entry_date = pd.to_datetime(entry.get("date"), errors="coerce")
+        entry_date_str = entry.get("date")
+        if not entry_date_str:
+            continue
+        entry_date = pd.to_datetime(entry_date_str, errors="coerce")
         if pd.isna(entry_date):
             continue
         entry_value = entry.get("bsr")
         entry_value = float(entry_value) if entry_value is not None else None
-        mask = result["date"].dt.normalize() == entry_date.normalize()
+        
+        # Normalize dates for comparison
+        entry_date_normalized = entry_date.normalize()
+        if "date" in result.columns:
+            result_dates_normalized = result["date"].dt.normalize()
+            mask = result_dates_normalized == entry_date_normalized
+        else:
+            mask = pd.Series([False] * len(result), index=result.index)
+        
         if mask.any():
-            # Explicitly set the BSR value - always copy to avoid SettingWithCopyWarning
-            result = result.copy()
+            # Update existing row with BSR value
             result.loc[mask, "BSR Amazon"] = entry_value
         else:
             # Add new row for BSR-only entry (no view data for this date)
             new_row = pd.DataFrame(
                 {
                     "date": [entry_date],
-                    "total_views": [0.0],  # Use 0.0 instead of 0 to ensure it's numeric
+                    "total_views": [0.0],
                     "BSR Amazon": [entry_value],
                 }
             )
             result = pd.concat([result, new_row], ignore_index=True)
+    
     return result
 
 
@@ -313,7 +328,13 @@ def create_current_dataset(
     else:
         combined = pd.DataFrame(columns=["date", "total_views", "BSR Amazon"])
 
+    # Apply manual BSR entries BEFORE any filtering
     combined = _apply_manual_bsr(combined, manual_entries)
+    
+    # Ensure date column is datetime
+    if "date" in combined.columns:
+        combined["date"] = pd.to_datetime(combined["date"], errors="coerce")
+        combined = combined.dropna(subset=["date"])
 
     # Don't filter by core date range if we have manual BSR entries outside that range
     # Manual BSR entries should always be included
