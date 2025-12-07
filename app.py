@@ -238,6 +238,9 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
             load_current_views_data_from_google_sheets.clear()
             load_recent_core_data.clear()
             load_video_details_long.clear()
+            load_manual_bsr_entries.clear()
+            create_current_dataset.clear()
+            # Force rerun
             st.rerun()
     
     # Determine if we're editing an entry
@@ -341,9 +344,10 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     # Otherwise, calculate diff if they're cumulative (shouldn't happen after our fix)
     daily_summary["views_change"] = daily_summary["total_views"].fillna(0)
     # Ensure BSR-only entries (with 0 views) are included
+    # IMPORTANT: Keep ALL rows that have either views > 0 OR BSR data (not null)
     daily_summary = daily_summary[
         (daily_summary["views_change"] > 0) | (daily_summary["BSR Amazon"].notna())
-    ]
+    ].copy()  # Use .copy() to avoid SettingWithCopyWarning
 
     daily_views = daily_summary[["date", "views_change", "BSR Amazon"]].rename(
         columns={"date": "Date", "views_change": "Views", "BSR Amazon": "Average BSR"}

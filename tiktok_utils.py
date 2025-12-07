@@ -284,7 +284,7 @@ def _apply_manual_bsr(
     return result
 
 
-@st.cache_data(ttl=60)  # Cache for 1 minute
+@st.cache_data(ttl=10)  # Cache for 10 seconds (shorter to pick up new BSR entries faster)
 def create_current_dataset(
     primary_df: pd.DataFrame | None,
     core_df: pd.DataFrame | None,
@@ -1481,7 +1481,7 @@ def _init_db():
         pass
 
 
-@st.cache_data(ttl=60)  # Cache for 1 minute
+@st.cache_data(ttl=10)  # Cache for 10 seconds (shorter to pick up new BSR entries faster)
 def load_manual_bsr_entries(brand: str = "Trueseamoss") -> list:
     """Load manual BSR entries from SQLite for a specific brand (migrates JSON if needed)."""
     _init_db()
