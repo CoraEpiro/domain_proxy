@@ -233,16 +233,21 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     
     with col2:
         if st.button("🔄 Refresh Data", use_container_width=True):
-            # Clear all caches to force reload
+            # Clear all caches to force reload - including core data cache which is brand-specific
             try:
                 load_current_views_data.clear()
                 load_current_views_data_from_google_sheets.clear()
+                # Clear core data cache - this is critical for brand-specific data
                 load_recent_core_data.clear()
                 load_video_details_long.clear()
                 load_manual_bsr_entries.clear()
+                # Also clear any session state caches
+                for key in list(st.session_state.keys()):
+                    if key.startswith("embed_") or key.startswith("details_lookup_") or key.startswith("summary_lookup_"):
+                        del st.session_state[key]
             except Exception:
                 pass  # Cache might not exist yet
-            # Force rerun
+            # Force rerun to reload all data
             st.rerun()
     
     # Determine if we're editing an entry
