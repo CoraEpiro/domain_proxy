@@ -145,12 +145,17 @@ def load_views_bsr_data(csv_path: Path = TIKTOK_DATA_PATH) -> pd.DataFrame:
 
 @st.cache_data(ttl=300)  # Cache for 5 minutes
 def load_recent_core_data(csv_path: Path = RECENT_CORE_DATA_PATH) -> pd.DataFrame:
-    """Load the 7-day core export (Original/Repost/Total metrics)."""
+    """Load the 7-day core export (Original/Repost/Total metrics).
+    
+    Note: Cache key includes the full path string to ensure brand-specific data
+    is cached separately.
+    """
     csv_path = Path(csv_path)
     if not csv_path.exists():
         return pd.DataFrame()
 
     try:
+        # Use the full absolute path as part of cache key to ensure brand separation
         df = pd.read_csv(csv_path)
     except Exception:
         return pd.DataFrame()

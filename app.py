@@ -765,6 +765,16 @@ def main():
             help="Choose the brand/account to analyze",
             key="brand_selector"
         )
+        
+        # Clear caches when brand changes to ensure correct data is loaded
+        if "last_selected_brand" not in st.session_state:
+            st.session_state.last_selected_brand = brand
+        elif st.session_state.last_selected_brand != brand:
+            # Brand changed - clear relevant caches
+            load_recent_core_data.clear()
+            load_video_details_long.clear()
+            create_current_dataset.clear()
+            st.session_state.last_selected_brand = brand
     
     # Render appropriate dashboard based on brand (only current data)
     # Use try-except to catch any errors that might cause persistent RUNNING state
