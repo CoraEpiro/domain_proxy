@@ -75,8 +75,8 @@ def render_bsr_edit_modal(edit_date: str = None, edit_bsr: float = None, brand: 
                     for key in list(st.session_state.keys()):
                         if key.startswith("edit_bsr_") or key.startswith("embed_") or key.startswith("details_lookup_"):
                             del st.session_state[key]
-                    # Clear dataset cache
-                    create_current_dataset.clear()
+                    # Clear BSR cache to force reload
+                    load_manual_bsr_entries.clear()
                     st.rerun()
                 else:
                     st.error("Failed to save BSR entry")
@@ -240,7 +240,6 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 load_recent_core_data.clear()
                 load_video_details_long.clear()
                 load_manual_bsr_entries.clear()
-                create_current_dataset.clear()
             except Exception:
                 pass  # Cache might not exist yet
             # Force rerun
@@ -822,7 +821,7 @@ def main():
             # Brand changed - clear relevant caches
             load_recent_core_data.clear()
             load_video_details_long.clear()
-            create_current_dataset.clear()
+            load_manual_bsr_entries.clear()
             st.session_state.last_selected_brand = brand
     
     # Render appropriate dashboard based on brand (only current data)
