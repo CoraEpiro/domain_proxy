@@ -336,8 +336,8 @@ def create_current_dataset(
         combined["date"] = pd.to_datetime(combined["date"], errors="coerce")
         combined = combined.dropna(subset=["date"])
 
-    # Don't filter by core date range if we have manual BSR entries outside that range
-    # Manual BSR entries should always be included
+    # Don't filter by core date range if we have BSR data outside that range
+    # Keep ALL rows that have BSR data, regardless of date range
     if core_df is not None and not core_df.empty and "Date" in core_df.columns:
         core_dates = pd.to_datetime(core_df["Date"], errors="coerce").dropna()
         if not core_dates.empty:
@@ -351,10 +351,14 @@ def create_current_dataset(
                     if pd.notna(entry_date):
                         manual_entry_dates.add(entry_date.normalize())
             
-            # Filter, but keep manual BSR entry dates (even if they have 0 views)
+            # Filter, but keep:
+            # 1. Dates within core range
+            # 2. Manual BSR entry dates (even if they have 0 views)
+            # 3. ANY dates that have BSR data (from source_df historical data)
             date_mask = (combined["date"] >= min_core) & (combined["date"] <= max_core)
             manual_mask = combined["date"].dt.normalize().isin(manual_entry_dates)
-            combined = combined[date_mask | manual_mask]
+            bsr_mask = combined["BSR Amazon"].notna()  # Keep all rows with BSR data
+            combined = combined[date_mask | manual_mask | bsr_mask]
     
     # Don't filter out rows with BSR data even if views are 0
     # Only filter out rows with no views AND no BSR
