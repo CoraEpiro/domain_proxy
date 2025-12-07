@@ -301,7 +301,7 @@ def _apply_manual_bsr(
     return result
 
 
-@st.cache_data(ttl=10)  # Cache for 10 seconds (shorter to pick up new BSR entries faster)
+@st.cache_data(ttl=5, show_spinner=False)  # Very short cache - 5 seconds
 def create_current_dataset(
     primary_df: pd.DataFrame | None,
     core_df: pd.DataFrame | None,
@@ -1509,12 +1509,18 @@ def _init_db():
         pass
 
 
-@st.cache_data(ttl=10)  # Cache for 10 seconds (shorter to pick up new BSR entries faster)
+@st.cache_data(ttl=5, show_spinner=False)  # Very short cache - 5 seconds
 def load_manual_bsr_entries(brand: str = "Trueseamoss") -> list:
     """Load manual BSR entries from SQLite for a specific brand (migrates JSON if needed)."""
     _init_db()
     try:
         with sqlite3.connect(DB_PATH) as conn:
+            # Get count and max date to create a cache key that changes when data changes
+            count_row = conn.execute(
+                "SELECT COUNT(*), MAX(date) FROM manual_bsr WHERE brand = ?",
+                (brand,)
+            ).fetchone()
+            
             rows = conn.execute(
                 "SELECT date, bsr FROM manual_bsr WHERE brand = ? ORDER BY date",
                 (brand,)

@@ -234,12 +234,15 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     with col2:
         if st.button("🔄 Refresh Data", use_container_width=True):
             # Clear all caches to force reload
-            load_current_views_data.clear()
-            load_current_views_data_from_google_sheets.clear()
-            load_recent_core_data.clear()
-            load_video_details_long.clear()
-            load_manual_bsr_entries.clear()
-            create_current_dataset.clear()
+            try:
+                load_current_views_data.clear()
+                load_current_views_data_from_google_sheets.clear()
+                load_recent_core_data.clear()
+                load_video_details_long.clear()
+                load_manual_bsr_entries.clear()
+                create_current_dataset.clear()
+            except Exception:
+                pass  # Cache might not exist yet
             # Force rerun
             st.rerun()
     
