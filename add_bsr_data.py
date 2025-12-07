@@ -89,6 +89,8 @@ def add_bsr_data():
         
         conn.commit()
         print("\n✅ All BSR data added successfully!")
+        print("\n⚠️  Note: You may need to refresh the Streamlit app or wait ~60 seconds")
+        print("   for the cache to expire to see the new BSR data in the dashboard.")
 
 if __name__ == "__main__":
     print("Adding BSR data...")

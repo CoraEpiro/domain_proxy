@@ -330,6 +330,7 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                             st.rerun()
     
     # Group by date - total_views should already be daily differences (not cumulative)
+    # Include all dates that have either views OR BSR data
     daily_summary = (
         df.groupby(df["date"].dt.floor("D"))
         .agg({"total_views": "sum", "BSR Amazon": "mean"})
@@ -338,7 +339,11 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     )
     # If total_views are already daily differences, use them directly as views_change
     # Otherwise, calculate diff if they're cumulative (shouldn't happen after our fix)
-    daily_summary["views_change"] = daily_summary["total_views"]
+    daily_summary["views_change"] = daily_summary["total_views"].fillna(0)
+    # Ensure BSR-only entries (with 0 views) are included
+    daily_summary = daily_summary[
+        (daily_summary["views_change"] > 0) | (daily_summary["BSR Amazon"].notna())
+    ]
 
     daily_views = daily_summary[["date", "views_change", "BSR Amazon"]].rename(
         columns={"date": "Date", "views_change": "Views", "BSR Amazon": "Average BSR"}

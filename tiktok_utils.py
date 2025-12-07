@@ -272,10 +272,11 @@ def _apply_manual_bsr(
         if mask.any():
             result.loc[mask, "BSR Amazon"] = entry_value
         else:
+            # Add new row for BSR-only entry (no view data for this date)
             new_row = pd.DataFrame(
                 {
                     "date": [entry_date],
-                    "total_views": [0],
+                    "total_views": [0.0],  # Use 0.0 instead of 0 to ensure it's numeric
                     "BSR Amazon": [entry_value],
                 }
             )
@@ -322,10 +323,16 @@ def create_current_dataset(
                     if pd.notna(entry_date):
                         manual_entry_dates.add(entry_date.normalize())
             
-            # Filter, but keep manual BSR entry dates
+            # Filter, but keep manual BSR entry dates (even if they have 0 views)
             date_mask = (combined["date"] >= min_core) & (combined["date"] <= max_core)
             manual_mask = combined["date"].dt.normalize().isin(manual_entry_dates)
             combined = combined[date_mask | manual_mask]
+    
+    # Don't filter out rows with BSR data even if views are 0
+    # Only filter out rows with no views AND no BSR
+    combined = combined[
+        (combined["total_views"] > 0) | (combined["BSR Amazon"].notna())
+    ]
 
     combined = combined.sort_values("date")
     return combined.reset_index(drop=True)
