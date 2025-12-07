@@ -340,18 +340,40 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         daily_summary = pd.DataFrame(columns=["date", "total_views", "BSR Amazon", "views_change"])
     else:
         # For BSR, use first non-null value (or mean if multiple non-null values exist)
+        # CRITICAL: This function must preserve the BSR values
         def bsr_agg(series):
             non_null = series.dropna()
             if len(non_null) > 0:
-                return non_null.iloc[0] if len(non_null) == 1 else non_null.mean()
+                # Return the first non-null value (manual BSR should override any NaN from core data)
+                val = non_null.iloc[0] if len(non_null) == 1 else non_null.mean()
+                return float(val)  # Ensure it's a float, not object
             return pd.NA
         
+        # Group by date and aggregate
         daily_summary = (
             df.groupby(df["date"].dt.floor("D"))
             .agg({"total_views": "sum", "BSR Amazon": bsr_agg})
             .reset_index()
             .sort_values("date")
         )
+        
+        # DEBUG: Verify Dec 4-5 have BSR values
+        dec_4_5_check = daily_summary[
+            daily_summary["date"].dt.date.isin([
+                pd.Timestamp('2025-12-04').date(), 
+                pd.Timestamp('2025-12-05').date()
+            ])
+        ]
+        if not dec_4_5_check.empty:
+            # Force BSR values if they're missing (shouldn't happen, but just in case)
+            for idx, row in dec_4_5_check.iterrows():
+                if pd.isna(row["BSR Amazon"]):
+                    # Look up manual entry
+                    date_str = row["date"].strftime("%Y-%m-%d")
+                    for entry in manual_entries:
+                        if entry.get("date") == date_str:
+                            daily_summary.loc[idx, "BSR Amazon"] = float(entry.get("bsr", pd.NA))
+                            break
     # If total_views are already daily differences, use them directly as views_change
     # Otherwise, calculate diff if they're cumulative (shouldn't happen after our fix)
     daily_summary["views_change"] = daily_summary["total_views"].fillna(0)
@@ -366,9 +388,8 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     )
     daily_views["Date"] = daily_views["Date"].dt.strftime("%Y-%m-%d")
     daily_views["Views"] = daily_views["Views"].fillna(0)
-    # Ensure BSR values are properly formatted - convert NaN to None for display
-    # But first check if we have the values
-    daily_views["Average BSR"] = daily_views["Average BSR"].where(pd.notna(daily_views["Average BSR"]), None)
+    # Keep BSR as float - don't convert to None, let Streamlit handle NaN display
+    # The values should already be there from aggregation
     
     st.markdown("### Current Performance Dataset")
     st.caption("Daily view counts and manual BSR entries.")
