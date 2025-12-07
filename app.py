@@ -360,23 +360,16 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
             .sort_values("date")
         )
         
-        # DEBUG: Verify Dec 4-5 have BSR values
-        dec_4_5_check = daily_summary[
-            daily_summary["date"].dt.date.isin([
-                pd.Timestamp('2025-12-04').date(), 
-                pd.Timestamp('2025-12-05').date()
-            ])
-        ]
-        if not dec_4_5_check.empty:
-            # Force BSR values if they're missing (shouldn't happen, but just in case)
-            for idx, row in dec_4_5_check.iterrows():
-                if pd.isna(row["BSR Amazon"]):
-                    # Look up manual entry
-                    date_str = row["date"].strftime("%Y-%m-%d")
-                    for entry in manual_entries:
-                        if entry.get("date") == date_str:
-                            daily_summary.loc[idx, "BSR Amazon"] = float(entry.get("bsr", pd.NA))
-                            break
+        # CRITICAL FIX: Ensure manual BSR entries are applied to daily_summary
+        # Sometimes aggregation loses BSR values, so we explicitly set them
+        for entry in manual_entries:
+            entry_date = pd.to_datetime(entry.get("date"), errors="coerce")
+            if pd.notna(entry_date):
+                entry_date_normalized = entry_date.normalize()
+                mask = daily_summary["date"].dt.normalize() == entry_date_normalized
+                if mask.any():
+                    # Force set the BSR value from manual entry
+                    daily_summary.loc[mask, "BSR Amazon"] = float(entry.get("bsr", pd.NA))
     # If total_views are already daily differences, use them directly as views_change
     # Otherwise, calculate diff if they're cumulative (shouldn't happen after our fix)
     daily_summary["views_change"] = daily_summary["total_views"].fillna(0)
