@@ -452,13 +452,34 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                     st.plotly_chart(repost_chart, use_container_width=True)
             
             # Compute correlation using day-over-day view deltas vs BSR
+            # Try lagged correlation (views today vs BSR tomorrow) as views may affect rank with a delay
             corr_df = daily_summary[["views_change", "BSR Amazon"]].apply(pd.to_numeric, errors="coerce").dropna()
-            if not corr_df.empty:
-                correlation = corr_df["views_change"].corr(-corr_df["BSR Amazon"])
+            if not corr_df.empty and len(corr_df) >= 2:
+                # Calculate both same-day and lagged correlation
+                correlation_same = corr_df["views_change"].corr(-corr_df["BSR Amazon"])
+                
+                # Lagged: views today vs BSR tomorrow (shift BSR forward)
+                corr_df_lagged = corr_df.copy()
+                corr_df_lagged["BSR Amazon"] = corr_df_lagged["BSR Amazon"].shift(-1)
+                corr_df_lagged = corr_df_lagged.dropna()
+                
+                if len(corr_df_lagged) >= 2:
+                    correlation_lagged = corr_df_lagged["views_change"].corr(-corr_df_lagged["BSR Amazon"])
+                    # Use the stronger (more positive) correlation
+                    if abs(correlation_lagged) > abs(correlation_same) or correlation_lagged > correlation_same:
+                        correlation = correlation_lagged
+                        help_text = "Lagged correlation: views today vs BSR tomorrow. Positive = more views lead to better rank."
+                    else:
+                        correlation = correlation_same
+                        help_text = "Same-day correlation: views vs BSR on same day. Positive = more views = better rank."
+                else:
+                    correlation = correlation_same
+                    help_text = "Same-day correlation: views vs BSR on same day. Positive = more views = better rank."
+                
                 st.metric(
                     "Correlation (ΔViews vs BSR)",
                     f"{correlation:.2f}",
-                    help="Positive value indicates bigger day-over-day view gains correspond with better (lower) BSR values.",
+                    help=help_text,
                 )
             else:
                 st.metric(
