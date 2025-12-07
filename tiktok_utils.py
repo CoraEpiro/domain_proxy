@@ -302,7 +302,12 @@ def create_current_dataset(
     if frames:
         combined = pd.concat(frames, ignore_index=True)
         combined = combined.sort_values("date")
+        # When dropping duplicates, prefer rows with BSR data
+        # Sort by BSR (NaN last) then keep last to prioritize BSR entries
+        combined = combined.sort_values("BSR Amazon", na_position='last')
         combined = combined.drop_duplicates(subset="date", keep="last")
+        # Re-sort by date
+        combined = combined.sort_values("date")
     else:
         combined = pd.DataFrame(columns=["date", "total_views", "BSR Amazon"])
 
