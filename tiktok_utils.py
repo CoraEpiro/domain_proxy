@@ -301,12 +301,12 @@ def _apply_manual_bsr(
     return result
 
 
-@st.cache_data(ttl=5, show_spinner=False)  # Very short cache - 5 seconds
 def create_current_dataset(
     primary_df: pd.DataFrame | None,
     core_df: pd.DataFrame | None,
     manual_entries: list[dict] | None,
 ) -> pd.DataFrame:
+    """Create current dataset - NOT CACHED to ensure BSR updates are immediate."""
     frames = []
     normalized_primary = _normalize_current_df(primary_df)
     if not normalized_primary.empty:
