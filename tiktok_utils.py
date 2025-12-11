@@ -196,19 +196,10 @@ def _core_to_current_frame(core_df: pd.DataFrame | None) -> pd.DataFrame:
 
     if "Total Views" in df.columns:
         # Total Views are cumulative - convert to daily differences
-        # Use Original Views + Repost Views differences for more accurate daily calculation
-        if "Original Views" in df.columns and "Repost Views" in df.columns:
-            original_views = pd.to_numeric(df["Original Views"], errors="coerce")
-            repost_views = pd.to_numeric(df["Repost Views"], errors="coerce")
-            # Calculate daily differences for each
-            original_daily = original_views.diff().fillna(0)
-            repost_daily = repost_views.diff().fillna(0)
-            # Sum to get total daily view change
-            daily_views = original_daily + repost_daily
-        else:
-            # Fallback to Total Views difference
-            cumulative_views = pd.to_numeric(df["Total Views"], errors="coerce")
-            daily_views = cumulative_views.diff().fillna(0)
+        # Use Total Views difference directly as it's the authoritative source
+        # (Original + Repost can be inaccurate when Repost Views decrease)
+        cumulative_views = pd.to_numeric(df["Total Views"], errors="coerce")
+        daily_views = cumulative_views.diff().fillna(0)
         views_series = daily_views.fillna(0)
     else:
         view_cols = [
@@ -561,7 +552,18 @@ def create_repost_views_chart(df: pd.DataFrame) -> go.Figure | None:
     chart_df["Date"] = pd.to_datetime(chart_df["Date"], errors="coerce")
     chart_df = chart_df.dropna(subset=["Date"])
     chart_df = chart_df.sort_values("Date")
-    chart_df["Repost Views"] = chart_df["Repost Views"].diff().fillna(0)
+    
+    # Calculate daily differences
+    repost_cumulative = pd.to_numeric(chart_df["Repost Views"], errors="coerce")
+    chart_df["Repost Views"] = repost_cumulative.diff()
+    
+    # Remove first row (no previous day to compare) instead of filling with 0
+    chart_df = chart_df.dropna(subset=["Repost Views"])
+    
+    # Handle negative values (can occur when reposts are removed or data is corrected)
+    # Set negative values to 0 for display purposes (or keep them if you want to show decreases)
+    # chart_df["Repost Views"] = chart_df["Repost Views"].clip(lower=0)  # Uncomment to hide negative values
+    
     if chart_df.empty:
         return None
 
