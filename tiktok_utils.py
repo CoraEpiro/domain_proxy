@@ -543,6 +543,60 @@ def create_core_engagement_chart(df: pd.DataFrame) -> go.Figure | None:
     return fig
 
 
+def create_sales_vs_views_chart(daily_df: pd.DataFrame) -> go.Figure | None:
+    """Plot sales vs views for comparison."""
+    if daily_df.empty or "Sales" not in daily_df.columns or "views_change" not in daily_df.columns:
+        return None
+
+    df = daily_df.copy()
+    if "date" not in df.columns:
+        return None
+
+    df["views_change"] = pd.to_numeric(df["views_change"], errors="coerce")
+    df["Sales"] = pd.to_numeric(df["Sales"], errors="coerce")
+    df = df.dropna(subset=["date", "views_change", "Sales"])
+    if df.empty:
+        return None
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=df["date"],
+            y=df["views_change"],
+            name="Δ TikTok Views",
+            mode="lines+markers",
+            line=dict(color="#1f77b4"),
+            hovertemplate="Date: %{x|%b %d, %Y}<br>Δ Views: %{y:,.0f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df["date"],
+            y=df["Sales"],
+            name="Sales",
+            mode="lines+markers",
+            line=dict(color="#2ca02c"),
+            yaxis="y2",
+            hovertemplate="Date: %{x|%b %d, %Y}<br>Sales: %{y:,.0f}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title="TikTok Views vs Sales",
+        xaxis=dict(title="Date"),
+        yaxis=dict(title="Δ TikTok Views"),
+        yaxis2=dict(
+            title="Sales",
+            overlaying="y",
+            side="right",
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        hovermode="x unified",
+        height=450,
+        template="plotly_white",
+    )
+    return fig
+
+
 def create_repost_views_chart(df: pd.DataFrame) -> go.Figure | None:
     """Single-series line chart for daily change in repost views."""
     if df.empty or "Date" not in df.columns or "Repost Views" not in df.columns:
@@ -1572,3 +1626,29 @@ def delete_manual_bsr_entry(date: str, brand: str = "Trueseamoss") -> bool:
         return True
     except Exception:
         return False
+
+
+# ---------- Sales Data Functions ----------
+@st.cache_data(ttl=5, show_spinner=False)  # Very short cache - 5 seconds
+def load_sales_data(brand: str = "Trueseamoss") -> list:
+    """Load sales data from SQLite for a specific brand."""
+    _init_db()
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            # Ensure sales_data table exists
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS sales_data (
+                    date TEXT,
+                    brand TEXT DEFAULT 'Trueseamoss',
+                    sales REAL,
+                    PRIMARY KEY (date, brand)
+                )
+            """)
+            
+            rows = conn.execute(
+                "SELECT date, sales FROM sales_data WHERE brand = ? ORDER BY date",
+                (brand,)
+            ).fetchall()
+            return [{"date": r[0], "sales": float(r[1]) if r[1] is not None else None} for r in rows]
+    except Exception:
+        return []

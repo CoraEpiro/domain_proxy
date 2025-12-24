@@ -32,10 +32,12 @@ from tiktok_utils import (
     create_core_engagement_chart,
     create_repost_views_chart,
     create_video_growth_scatter,
+    create_sales_vs_views_chart,
     RECENT_CORE_DATA_PATH,
     VIDEO_DETAILS_DATA_PATH,
     get_brand_core_path,
     get_brand_video_details_path,
+    load_sales_data,
 )
 
 APP_VERSION = "2025-11-16-2"
@@ -380,6 +382,14 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         # Ensure BSR column is numeric (not object)
         daily_summary["BSR Amazon"] = pd.to_numeric(daily_summary["BSR Amazon"], errors="coerce")
     
+    # Add sales data to daily_summary (only for Trueseamoss)
+    if brand == "Trueseamoss":
+        sales_entries = load_sales_data(brand)
+        if sales_entries:
+            sales_dict = {entry["date"]: entry["sales"] for entry in sales_entries}
+            daily_summary["Sales"] = daily_summary["date"].dt.strftime("%Y-%m-%d").map(sales_dict)
+            daily_summary["Sales"] = pd.to_numeric(daily_summary["Sales"], errors="coerce")
+    
     # If total_views are already daily differences, use them directly as views_change
     # Otherwise, calculate diff if they're cumulative (shouldn't happen after our fix)
     daily_summary["views_change"] = daily_summary["total_views"].fillna(0)
@@ -389,6 +399,11 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         (daily_summary["views_change"] > 0) | (daily_summary["BSR Amazon"].notna())
     ].copy()  # Use .copy() to avoid SettingWithCopyWarning
 
+    # Load sales data for comparison (only for Trueseamoss)
+    sales_entries = []
+    if brand == "Trueseamoss":
+        sales_entries = load_sales_data(brand)
+    
     daily_views = daily_summary[["date", "views_change", "BSR Amazon"]].rename(
         columns={"date": "Date", "views_change": "Views", "BSR Amazon": "Average BSR"}
     )
@@ -399,8 +414,19 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     # Round to integer for display (BSR values are whole numbers)
     daily_views["Average BSR"] = daily_views["Average BSR"].round().astype("Int64")
     
+    # Add sales data if available
+    if sales_entries:
+        sales_dict = {entry["date"]: entry["sales"] for entry in sales_entries}
+        daily_views["Sales"] = daily_views["Date"].map(sales_dict)
+        daily_views["Sales"] = pd.to_numeric(daily_views["Sales"], errors="coerce")
+        # Reorder columns: Date, Views, Sales, Average BSR
+        daily_views = daily_views[["Date", "Views", "Sales", "Average BSR"]]
+    
     st.markdown("### Current Performance Dataset")
-    st.caption("Daily view counts and manual BSR entries.")
+    if sales_entries:
+        st.caption("Daily view counts, sales data, and manual BSR entries.")
+    else:
+        st.caption("Daily view counts and manual BSR entries.")
     st.dataframe(
         daily_views,
         use_container_width=True,
@@ -450,6 +476,22 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 repost_chart = create_repost_views_chart(core_df)
                 if repost_chart:
                     st.plotly_chart(repost_chart, use_container_width=True)
+            
+            # Show sales vs views chart (only for Trueseamoss)
+            if brand == "Trueseamoss" and "Sales" in daily_summary.columns and daily_summary["Sales"].notna().any():
+                sales_views_chart = create_sales_vs_views_chart(daily_summary)
+                if sales_views_chart:
+                    st.plotly_chart(sales_views_chart, use_container_width=True)
+                    
+                    # Calculate correlation between sales and views
+                    corr_sales_df = daily_summary[["views_change", "Sales"]].apply(pd.to_numeric, errors="coerce").dropna()
+                    if not corr_sales_df.empty and len(corr_sales_df) > 1:
+                        sales_correlation = corr_sales_df["views_change"].corr(corr_sales_df["Sales"])
+                        st.metric(
+                            "Correlation (ΔViews vs Sales)",
+                            f"{sales_correlation:.2f}",
+                            help="Positive value = more views correspond with more sales. Negative = more views correspond with fewer sales.",
+                        )
             
             # Compute correlation using day-over-day view deltas vs BSR
             # Invert BSR so that lower BSR (better rank) = higher value for positive correlation
