@@ -324,13 +324,17 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     
     # Show manual BSR entries management
     if manual_entries:
-        with st.expander("📝 Manage Manual BSR Entries"):
+        # Show "Manage Sales" for Trueseamoss, "Manage Manual BSR Entries" for others
+        expander_title = "📝 Manage Sales" if brand == "Trueseamoss" else "📝 Manage Manual BSR Entries"
+        with st.expander(expander_title):
             entries_df = pd.DataFrame(manual_entries)
             entries_df.columns = ["Date", "BSR"]
             for idx, row in entries_df.iterrows():
                 col1, col2, col3 = st.columns([3, 1, 1])
                 with col1:
-                    st.write(f"**{row['Date']}**: BSR = {row['BSR']}")
+                    # Show "Sales" for Trueseamoss, "BSR" for others
+                    label = "Sales" if brand == "Trueseamoss" else "BSR"
+                    st.write(f"**{row['Date']}**: {label} = {row['BSR']}")
                 with col2:
                     if st.button("Edit", key=f"edit_{idx}"):
                         st.session_state[f"edit_bsr_{idx}"] = True
