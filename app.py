@@ -612,12 +612,16 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     # Show outstanding videos from CSV with filters
     if not summary_df.empty:
         # Initialize default filter values
+        # Set default start date to be before the first creation date so all videos are shown by default
+        if summary_df["created_date"].notna().any():
+            first_created = summary_df["created_date"].min()
+            default_start_date = (first_created - pd.Timedelta(days=1)).date()
+        else:
+            default_start_date = date.today() - pd.Timedelta(days=365)  # Default to 1 year ago if no created dates
+        
         if summary_df["last_date"].notna().any():
-            default_start = summary_df["last_date"].max() - pd.Timedelta(days=7)
-            default_start_date = default_start.date()
             default_end_date = summary_df["last_date"].max().date()
         else:
-            default_start_date = date.today()
             default_end_date = date.today()
         type_options = sorted(summary_df["video_type"].dropna().unique().tolist())
         
