@@ -420,7 +420,7 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
             columns={"date": "Date", "views_change": "Views", "Sales": "Sales"}
         )
         display_df["Date"] = display_df["Date"].dt.strftime("%Y-%m-%d")
-        display_df["Views"] = display_df["Views"].fillna(0)
+        display_df["Views"] = pd.to_numeric(display_df["Views"], errors="coerce").fillna(0).round().astype("Int64")
         display_df["Sales"] = pd.to_numeric(display_df["Sales"], errors="coerce").round().astype("Int64")
         # Rename Sales to show it's replacing BSR
         display_df = display_df.rename(columns={"Sales": "Sales (replaces BSR)"})
@@ -432,7 +432,7 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
             columns={"date": "Date", "views_change": "Views", "BSR Amazon": "Average BSR"}
         )
         display_df["Date"] = display_df["Date"].dt.strftime("%Y-%m-%d")
-        display_df["Views"] = display_df["Views"].fillna(0)
+        display_df["Views"] = pd.to_numeric(display_df["Views"], errors="coerce").fillna(0).round().astype("Int64")
         display_df["Average BSR"] = pd.to_numeric(display_df["Average BSR"], errors="coerce").round().astype("Int64")
         column_label = "Average BSR"
     
