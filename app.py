@@ -458,8 +458,12 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         with metric_col2:
             # For Trueseamoss, always show "Latest Sales" if sales data exists in dataset
             if brand == "Trueseamoss" and "Sales" in daily_summary.columns and daily_summary["Sales"].notna().any():
-                sales_val = latest_row.get("Sales") if "Sales" in latest_row.index else None
-                if pd.notna(sales_val):
+                # Find the most recent row with a sales value (not just the latest row)
+                sales_rows = daily_summary[daily_summary["Sales"].notna()]
+                if not sales_rows.empty:
+                    latest_sales_row = sales_rows.iloc[-1]
+                    sales_val = latest_sales_row["Sales"]
+                    sales_date = latest_sales_row["date"]
                     st.metric("Latest Sales", f"{int(sales_val):,}")
                 else:
                     st.metric("Latest Sales", "N/A")

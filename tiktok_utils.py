@@ -205,9 +205,9 @@ def _core_to_current_frame(core_df: pd.DataFrame | None) -> pd.DataFrame:
         last_valid_idx = 0
         last_valid_value = cumulative_views.iloc[0] if len(cumulative_views) > 0 and pd.notna(cumulative_views.iloc[0]) else 0
         
-        # First row: use cumulative value as initial daily value
-        if len(cumulative_views) > 0 and pd.notna(cumulative_views.iloc[0]):
-            daily_views.iloc[0] = cumulative_views.iloc[0]
+        # First row: daily change is 0 (no previous day to compare)
+        if len(cumulative_views) > 0:
+            daily_views.iloc[0] = 0
         
         for i in range(1, len(cumulative_views)):
             current_value = cumulative_views.iloc[i]
