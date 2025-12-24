@@ -435,9 +435,8 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         display_df["Date"] = display_df["Date"].dt.strftime("%Y-%m-%d")
         display_df["Views"] = pd.to_numeric(display_df["Views"], errors="coerce").fillna(0).round().astype("Int64")
         display_df["Sales"] = pd.to_numeric(display_df["Sales"], errors="coerce").round().astype("Int64")
-        # Rename Sales to show it's replacing BSR
-        display_df = display_df.rename(columns={"Sales": "Sales (replaces BSR)"})
-        column_label = "Sales (replaces BSR)"
+        # Keep Sales column name as is
+        column_label = "Sales"
     else:
         # For other brands or when no sales data, show BSR
         display_df = daily_summary[["date", "views_change", "BSR Amazon"]].copy()

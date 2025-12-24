@@ -672,9 +672,13 @@ def create_repost_views_chart(df: pd.DataFrame) -> go.Figure | None:
     chart_df = df[["Date", "Repost Views"]].copy()
     chart_df["Date"] = pd.to_datetime(chart_df["Date"], errors="coerce")
     chart_df = chart_df.dropna(subset=["Date"])
+    
+    # Handle duplicate dates by taking the maximum repost views for each date
+    # This ensures we use the latest/most complete data for each day
+    chart_df = chart_df.groupby("Date", as_index=False)["Repost Views"].max()
     chart_df = chart_df.sort_values("Date")
     
-    # Calculate daily differences
+    # Calculate daily differences (now that duplicates are resolved)
     repost_cumulative = pd.to_numeric(chart_df["Repost Views"], errors="coerce")
     chart_df["Repost Views"] = repost_cumulative.diff()
     
