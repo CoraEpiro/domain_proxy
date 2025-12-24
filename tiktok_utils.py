@@ -358,12 +358,29 @@ def create_current_dataset(
         frames.append(core_frame)
 
     if frames:
+        # Add source indicator before concatenating to prioritize core data
+        for i, frame in enumerate(frames):
+            if i == len(frames) - 1 and core_df is not None and not core_df.empty:
+                # Last frame is core data - mark it with 0 (higher priority)
+                frame["_source_priority"] = 0
+            else:
+                # Primary data gets lower priority
+                frame["_source_priority"] = 1
+        
         combined = pd.concat(frames, ignore_index=True)
         combined = combined.sort_values("date")
-        # When dropping duplicates, prefer rows with BSR data
-        # Sort by BSR (NaN last) then keep last to prioritize BSR entries
-        combined = combined.sort_values("BSR Amazon", na_position='last')
-        combined = combined.drop_duplicates(subset="date", keep="last")
+        # When dropping duplicates, prefer:
+        # 1. Rows with BSR data (regardless of source)
+        # 2. Core data over primary data (core is more authoritative)
+        # Sort: BSR (NaN last), then source_priority (0=core first), then keep first
+        combined = combined.sort_values(
+            ["BSR Amazon", "_source_priority"], 
+            na_position='last', 
+            ascending=[True, True]
+        )
+        combined = combined.drop_duplicates(subset="date", keep="first")
+        # Remove the temporary source column
+        combined = combined.drop(columns=["_source_priority"], errors="ignore")
         # Re-sort by date
         combined = combined.sort_values("date")
     else:
