@@ -199,8 +199,58 @@ def _core_to_current_frame(core_df: pd.DataFrame | None) -> pd.DataFrame:
         # Use Total Views difference directly as it's the authoritative source
         # (Original + Repost can be inaccurate when Repost Views decrease)
         cumulative_views = pd.to_numeric(df["Total Views"], errors="coerce")
-        daily_views = cumulative_views.diff().fillna(0)
-        views_series = daily_views.fillna(0)
+        
+        # Calculate daily differences, handling data errors where cumulative decreases
+        daily_views = pd.Series(0.0, index=df.index)
+        last_valid_idx = 0
+        last_valid_value = cumulative_views.iloc[0] if len(cumulative_views) > 0 and pd.notna(cumulative_views.iloc[0]) else 0
+        
+        # First row: use cumulative value as initial daily value
+        if len(cumulative_views) > 0 and pd.notna(cumulative_views.iloc[0]):
+            daily_views.iloc[0] = cumulative_views.iloc[0]
+        
+        for i in range(1, len(cumulative_views)):
+            current_value = cumulative_views.iloc[i]
+            if pd.isna(current_value):
+                daily_views.iloc[i] = 0
+                continue
+            
+            prev_value = cumulative_views.iloc[i-1]
+            
+            # Check if cumulative decreased (data error - shouldn't happen)
+            if pd.notna(prev_value) and current_value < prev_value:
+                # Data error: cumulative decreased on this day
+                # Mark this day as 0, keep last_valid_idx pointing to the last good date
+                daily_views.iloc[i] = 0
+                # Don't update last_valid_idx - next valid day will calculate from last_valid
+            elif current_value < last_valid_value:
+                # Current value is less than last valid (but might be > previous)
+                # Still a data error, mark as 0
+                daily_views.iloc[i] = 0
+            else:
+                # Check if previous day was a data error (had 0 views due to decrease)
+                if i > 0 and daily_views.iloc[i-1] == 0 and pd.notna(prev_value) and prev_value < last_valid_value:
+                    # Previous day was a data error, calculate total change from last valid date
+                    # This represents the change over the period (including the bad day)
+                    daily_views.iloc[i] = current_value - last_valid_value
+                else:
+                    # Normal case: calculate from previous day
+                    if pd.notna(prev_value):
+                        daily_views.iloc[i] = current_value - prev_value
+                    else:
+                        # Previous was NaN, calculate from last valid
+                        days_diff = (df.iloc[i][date_col] - df.iloc[last_valid_idx][date_col]).days
+                        if days_diff > 0:
+                            daily_views.iloc[i] = (current_value - last_valid_value) / days_diff
+                        else:
+                            daily_views.iloc[i] = 0
+                
+                # Update last valid if this is a valid increase
+                if current_value >= last_valid_value:
+                    last_valid_idx = i
+                    last_valid_value = current_value
+        
+        views_series = daily_views
     else:
         view_cols = [
             col for col in df.columns if isinstance(col, str) and "view" in col.lower()
