@@ -510,6 +510,27 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                     if trace.name == "Amazon BSR":
                         trace.name = "Sales"
                 st.plotly_chart(combined_chart, use_container_width=True)
+            
+            if not core_df.empty:
+                repost_chart = create_repost_views_chart(core_df)
+                if repost_chart:
+                    st.plotly_chart(repost_chart, use_container_width=True)
+            
+            # Calculate correlation between sales and views for Trueseamoss
+            corr_sales_df = daily_summary[["views_change", "Sales"]].apply(pd.to_numeric, errors="coerce").dropna()
+            if not corr_sales_df.empty and len(corr_sales_df) > 1:
+                sales_correlation = corr_sales_df["views_change"].corr(corr_sales_df["Sales"])
+                st.metric(
+                    "Correlation (ΔViews vs Sales)",
+                    f"{sales_correlation:.2f}",
+                    help="Positive value = more views correspond with more sales. Negative = more views correspond with fewer sales.",
+                )
+            else:
+                st.metric(
+                    "Correlation (ΔViews vs Sales)",
+                    "N/A",
+                    help="Need at least two days with both view changes and sales values.",
+                )
         elif df["BSR Amazon"].notna().any():
             st.markdown("### Combined Insights")
             combined_chart = create_views_change_vs_bsr_chart(daily_summary)
@@ -521,42 +542,24 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 if repost_chart:
                     st.plotly_chart(repost_chart, use_container_width=True)
             
-            # Compute correlation: For Trueseamoss use Sales, for others use BSR
-            if brand == "Trueseamoss" and "Sales" in daily_summary.columns and daily_summary["Sales"].notna().any():
-                # Calculate correlation between sales and views
-                corr_sales_df = daily_summary[["views_change", "Sales"]].apply(pd.to_numeric, errors="coerce").dropna()
-                if not corr_sales_df.empty and len(corr_sales_df) > 1:
-                    sales_correlation = corr_sales_df["views_change"].corr(corr_sales_df["Sales"])
-                    st.metric(
-                        "Correlation (ΔViews vs Sales)",
-                        f"{sales_correlation:.2f}",
-                        help="Positive value = more views correspond with more sales. Negative = more views correspond with fewer sales.",
-                    )
-                else:
-                    st.metric(
-                        "Correlation (ΔViews vs Sales)",
-                        "N/A",
-                        help="Need at least two days with both view changes and sales values.",
-                    )
+            # Compute correlation using day-over-day view deltas vs BSR
+            # Invert BSR so that lower BSR (better rank) = higher value for positive correlation
+            corr_df = daily_summary[["views_change", "BSR Amazon"]].apply(pd.to_numeric, errors="coerce").dropna()
+            if not corr_df.empty:
+                # Invert BSR: lower BSR (better rank) becomes higher value
+                # So positive correlation = more views → better rank (lower BSR)
+                correlation = corr_df["views_change"].corr(-corr_df["BSR Amazon"])
+                st.metric(
+                    "Correlation (ΔViews vs BSR)",
+                    f"{correlation:.2f}",
+                    help="Positive value = more views correspond with better (lower) BSR. Negative = more views correspond with worse (higher) BSR.",
+                )
             else:
-                # Compute correlation using day-over-day view deltas vs BSR
-                # Invert BSR so that lower BSR (better rank) = higher value for positive correlation
-                corr_df = daily_summary[["views_change", "BSR Amazon"]].apply(pd.to_numeric, errors="coerce").dropna()
-                if not corr_df.empty:
-                    # Invert BSR: lower BSR (better rank) becomes higher value
-                    # So positive correlation = more views → better rank (lower BSR)
-                    correlation = corr_df["views_change"].corr(-corr_df["BSR Amazon"])
-                    st.metric(
-                        "Correlation (ΔViews vs BSR)",
-                        f"{correlation:.2f}",
-                        help="Positive value = more views correspond with better (lower) BSR. Negative = more views correspond with worse (higher) BSR.",
-                    )
-                else:
-                    st.metric(
-                        "Correlation (ΔViews vs BSR)",
-                        "N/A",
-                        help="Need at least two days with both view changes and BSR values.",
-                    )
+                st.metric(
+                    "Correlation (ΔViews vs BSR)",
+                    "N/A",
+                    help="Need at least two days with both view changes and BSR values.",
+                )
 
     # Unified Individual TikTok Videos Section
     st.divider()
