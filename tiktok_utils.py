@@ -681,6 +681,11 @@ def create_repost_views_chart(df: pd.DataFrame) -> go.Figure | None:
     # Remove first row (no previous day to compare) instead of filling with 0
     chart_df = chart_df.dropna(subset=["Repost Views"])
     
+    # Filter out extreme outliers (likely data errors)
+    # Normal repost view changes are typically 2k-7k, so filter anything > 20k
+    # This removes anomalies like Dec 3, 2025 which had 102k (likely a data error)
+    chart_df = chart_df[chart_df["Repost Views"] <= 20000]
+    
     # Handle negative values (can occur when reposts are removed or data is corrected)
     # Set negative values to 0 for display purposes (or keep them if you want to show decreases)
     # chart_df["Repost Views"] = chart_df["Repost Views"].clip(lower=0)  # Uncomment to hide negative values
