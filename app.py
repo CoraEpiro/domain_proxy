@@ -456,9 +456,13 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         with metric_col1:
             st.metric("Latest Views Change", f"{int(delta):,}")
         with metric_col2:
-            if brand == "Trueseamoss" and "Sales" in latest_row.index and pd.notna(latest_row.get("Sales")):
-                sales_val = latest_row["Sales"]
-                st.metric("Latest Sales", f"{int(sales_val):,}")
+            # For Trueseamoss, always show "Latest Sales" if sales data exists in dataset
+            if brand == "Trueseamoss" and "Sales" in daily_summary.columns and daily_summary["Sales"].notna().any():
+                sales_val = latest_row.get("Sales") if "Sales" in latest_row.index else None
+                if pd.notna(sales_val):
+                    st.metric("Latest Sales", f"{int(sales_val):,}")
+                else:
+                    st.metric("Latest Sales", "N/A")
             else:
                 bsr_val = latest_row["BSR Amazon"] if pd.notna(latest_row.get("BSR Amazon")) else None
                 if bsr_val:
@@ -521,13 +525,16 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                     st.plotly_chart(repost_chart, use_container_width=True)
             
             # Calculate correlation between sales and views for Trueseamoss
+            # NOTE: We do NOT invert Sales (unlike BSR where lower is better)
+            # For Sales, higher is better, so positive correlation = more views = more sales (good)
             corr_sales_df = daily_summary[["views_change", "Sales"]].apply(pd.to_numeric, errors="coerce").dropna()
             if not corr_sales_df.empty and len(corr_sales_df) > 1:
+                # Direct correlation: positive = views increase with sales increase (good)
                 sales_correlation = corr_sales_df["views_change"].corr(corr_sales_df["Sales"])
                 st.metric(
                     "Correlation (ΔViews vs Sales)",
                     f"{sales_correlation:.2f}",
-                    help="Positive value = more views correspond with more sales. Negative = more views correspond with fewer sales.",
+                    help="Positive value = more views correspond with more sales (good). Negative = more views correspond with fewer sales (unexpected).",
                 )
             else:
                 st.metric(
