@@ -406,6 +406,19 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     daily_summary = daily_summary[
         (daily_summary["views_change"] > 0) | (daily_summary["BSR Amazon"].notna())
     ].copy()  # Use .copy() to avoid SettingWithCopyWarning
+    
+    # Filter out specific dates: Nov 24 (no views, first day) and Dec 24 (no sales for Trueseamoss)
+    dates_to_exclude = [pd.to_datetime("2025-11-24")]
+    if brand == "Trueseamoss":
+        # For Trueseamoss, also exclude Dec 24 if it has no sales
+        if "Sales" in daily_summary.columns:
+            dec24_mask = (daily_summary["date"] == pd.to_datetime("2025-12-24")) & daily_summary["Sales"].isna()
+            if dec24_mask.any():
+                dates_to_exclude.append(pd.to_datetime("2025-12-24"))
+    
+    # Exclude the dates
+    if dates_to_exclude:
+        daily_summary = daily_summary[~daily_summary["date"].isin(dates_to_exclude)]
 
     # Load sales data for comparison (only for Trueseamoss)
     sales_entries = []
