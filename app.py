@@ -628,7 +628,7 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 date_range_start = st.date_input(
                     "Date Range Start",
                     value=default_start_date,
-                    help="Filter videos observed within this date range"
+                    help="Filter videos created on or after this date and observed within this date range"
                 )
             with date_range_col2:
                 date_range_end = st.date_input(
@@ -682,9 +682,12 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         
         # Apply date range filter
         if date_range_start and date_range_end:
-            # Filter videos that have observations within the date range
+            # Filter videos that:
+            # 1. Were created on or after the date range start
+            # 2. Have observations within the date range
             filtered = filtered[
-                (filtered["first_date"].dt.date <= date_range_end)
+                (filtered["created_date"].dt.date >= date_range_start)
+                & (filtered["first_date"].dt.date <= date_range_end)
                 & (filtered["last_date"].dt.date >= date_range_start)
             ]
         
