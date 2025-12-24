@@ -383,12 +383,16 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         daily_summary["BSR Amazon"] = pd.to_numeric(daily_summary["BSR Amazon"], errors="coerce")
     
     # Add sales data to daily_summary (only for Trueseamoss)
+    # For Trueseamoss, replace BSR with Sales data
     if brand == "Trueseamoss":
         sales_entries = load_sales_data(brand)
         if sales_entries:
             sales_dict = {entry["date"]: entry["sales"] for entry in sales_entries}
+            # Replace BSR Amazon with Sales for Trueseamoss
             daily_summary["Sales"] = daily_summary["date"].dt.strftime("%Y-%m-%d").map(sales_dict)
             daily_summary["Sales"] = pd.to_numeric(daily_summary["Sales"], errors="coerce")
+            # Replace BSR with Sales values where sales data exists
+            daily_summary.loc[daily_summary["Sales"].notna(), "BSR Amazon"] = daily_summary.loc[daily_summary["Sales"].notna(), "Sales"]
     
     # If total_views are already daily differences, use them directly as views_change
     # Otherwise, calculate diff if they're cumulative (shouldn't happen after our fix)
@@ -404,27 +408,35 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     if brand == "Trueseamoss":
         sales_entries = load_sales_data(brand)
     
-    daily_views = daily_summary[["date", "views_change", "BSR Amazon"]].rename(
-        columns={"date": "Date", "views_change": "Views", "BSR Amazon": "Average BSR"}
-    )
-    daily_views["Date"] = daily_views["Date"].dt.strftime("%Y-%m-%d")
-    daily_views["Views"] = daily_views["Views"].fillna(0)
-    # Ensure BSR is numeric and properly formatted
-    daily_views["Average BSR"] = pd.to_numeric(daily_views["Average BSR"], errors="coerce")
-    # Round to integer for display (BSR values are whole numbers)
-    daily_views["Average BSR"] = daily_views["Average BSR"].round().astype("Int64")
+    # For Trueseamoss, show Sales instead of BSR; for others, show BSR
+    if brand == "Trueseamoss" and "Sales" in daily_summary.columns and daily_summary["Sales"].notna().any():
+        # Replace BSR column with Sales for display
+        display_df = daily_summary[["date", "views_change", "Sales"]].copy()
+        display_df = display_df.rename(
+            columns={"date": "Date", "views_change": "Views", "Sales": "Sales"}
+        )
+        display_df["Date"] = display_df["Date"].dt.strftime("%Y-%m-%d")
+        display_df["Views"] = display_df["Views"].fillna(0)
+        display_df["Sales"] = pd.to_numeric(display_df["Sales"], errors="coerce").round().astype("Int64")
+        # Rename Sales to show it's replacing BSR
+        display_df = display_df.rename(columns={"Sales": "Sales (replaces BSR)"})
+        column_label = "Sales (replaces BSR)"
+    else:
+        # For other brands or when no sales data, show BSR
+        display_df = daily_summary[["date", "views_change", "BSR Amazon"]].copy()
+        display_df = display_df.rename(
+            columns={"date": "Date", "views_change": "Views", "BSR Amazon": "Average BSR"}
+        )
+        display_df["Date"] = display_df["Date"].dt.strftime("%Y-%m-%d")
+        display_df["Views"] = display_df["Views"].fillna(0)
+        display_df["Average BSR"] = pd.to_numeric(display_df["Average BSR"], errors="coerce").round().astype("Int64")
+        column_label = "Average BSR"
     
-    # Add sales data if available
-    if sales_entries:
-        sales_dict = {entry["date"]: entry["sales"] for entry in sales_entries}
-        daily_views["Sales"] = daily_views["Date"].map(sales_dict)
-        daily_views["Sales"] = pd.to_numeric(daily_views["Sales"], errors="coerce")
-        # Reorder columns: Date, Views, Sales, Average BSR
-        daily_views = daily_views[["Date", "Views", "Sales", "Average BSR"]]
+    daily_views = display_df
     
     st.markdown("### Current Performance Dataset")
-    if sales_entries:
-        st.caption("Daily view counts, sales data, and manual BSR entries.")
+    if brand == "Trueseamoss" and "Sales" in daily_summary.columns:
+        st.caption("Daily view counts and sales data (replacing BSR for Trueseamoss).")
     else:
         st.caption("Daily view counts and manual BSR entries.")
     st.dataframe(
@@ -440,11 +452,15 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         with metric_col1:
             st.metric("Latest Views Change", f"{int(delta):,}")
         with metric_col2:
-            bsr_val = latest_row["BSR Amazon"] if pd.notna(latest_row["BSR Amazon"]) else None
-            if bsr_val:
-                st.metric("Latest Average BSR", f"{bsr_val:.0f}")
+            if brand == "Trueseamoss" and "Sales" in latest_row.index and pd.notna(latest_row.get("Sales")):
+                sales_val = latest_row["Sales"]
+                st.metric("Latest Sales", f"{int(sales_val):,}")
             else:
-                st.metric("Latest Average BSR", "N/A")
+                bsr_val = latest_row["BSR Amazon"] if pd.notna(latest_row.get("BSR Amazon")) else None
+                if bsr_val:
+                    st.metric("Latest Average BSR", f"{bsr_val:.0f}")
+                else:
+                    st.metric("Latest Average BSR", "N/A")
     
     # Charts
     if not df.empty and df["total_views"].notna().any():
@@ -459,14 +475,42 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 st.plotly_chart(views_line, use_container_width=True)
         
         with line_col2:
-            if df["BSR Amazon"].notna().any():
+            # For Trueseamoss, show Sales chart instead of BSR; for others, show BSR
+            if brand == "Trueseamoss" and "Sales" in daily_summary.columns and daily_summary["Sales"].notna().any():
+                # Create sales line chart
+                sales_df = daily_summary[["date", "Sales"]].copy()
+                sales_df = sales_df.rename(columns={"date": "date", "Sales": "BSR Amazon"})
+                sales_chart = create_bsr_line_chart(sales_df)
+                if sales_chart:
+                    # Update title to say Sales instead of BSR
+                    sales_chart.update_layout(title="Sales Over Time")
+                    sales_chart.update_traces(name="Sales")
+                    sales_chart.update_layout(yaxis_title="Sales")
+                    st.plotly_chart(sales_chart, use_container_width=True)
+            elif df["BSR Amazon"].notna().any():
                 bsr_line = create_bsr_line_chart(df)
                 if bsr_line:
                     st.plotly_chart(bsr_line, use_container_width=True)
             else:
                 st.info("Add BSR values to see the BSR chart")
         
-        if df["BSR Amazon"].notna().any():
+        # Show combined chart: For Trueseamoss use Sales (which replaced BSR), for others use BSR
+        if brand == "Trueseamoss" and "Sales" in daily_summary.columns and daily_summary["Sales"].notna().any():
+            st.markdown("### Combined Insights")
+            # Use the combined chart but with Sales values (which are now in BSR Amazon column)
+            combined_chart = create_views_change_vs_bsr_chart(daily_summary)
+            if combined_chart:
+                # Update chart to show Sales instead of BSR
+                combined_chart.update_layout(
+                    title="Day-over-day TikTok Views vs. Sales",
+                    yaxis2_title="Sales"
+                )
+                # Update trace name
+                for trace in combined_chart.data:
+                    if trace.name == "Amazon BSR":
+                        trace.name = "Sales"
+                st.plotly_chart(combined_chart, use_container_width=True)
+        elif df["BSR Amazon"].notna().any():
             st.markdown("### Combined Insights")
             combined_chart = create_views_change_vs_bsr_chart(daily_summary)
             if combined_chart:
@@ -477,40 +521,42 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 if repost_chart:
                     st.plotly_chart(repost_chart, use_container_width=True)
             
-            # Show sales vs views chart (only for Trueseamoss)
+            # Compute correlation: For Trueseamoss use Sales, for others use BSR
             if brand == "Trueseamoss" and "Sales" in daily_summary.columns and daily_summary["Sales"].notna().any():
-                sales_views_chart = create_sales_vs_views_chart(daily_summary)
-                if sales_views_chart:
-                    st.plotly_chart(sales_views_chart, use_container_width=True)
-                    
-                    # Calculate correlation between sales and views
-                    corr_sales_df = daily_summary[["views_change", "Sales"]].apply(pd.to_numeric, errors="coerce").dropna()
-                    if not corr_sales_df.empty and len(corr_sales_df) > 1:
-                        sales_correlation = corr_sales_df["views_change"].corr(corr_sales_df["Sales"])
-                        st.metric(
-                            "Correlation (ΔViews vs Sales)",
-                            f"{sales_correlation:.2f}",
-                            help="Positive value = more views correspond with more sales. Negative = more views correspond with fewer sales.",
-                        )
-            
-            # Compute correlation using day-over-day view deltas vs BSR
-            # Invert BSR so that lower BSR (better rank) = higher value for positive correlation
-            corr_df = daily_summary[["views_change", "BSR Amazon"]].apply(pd.to_numeric, errors="coerce").dropna()
-            if not corr_df.empty:
-                # Invert BSR: lower BSR (better rank) becomes higher value
-                # So positive correlation = more views → better rank (lower BSR)
-                correlation = corr_df["views_change"].corr(-corr_df["BSR Amazon"])
-                st.metric(
-                    "Correlation (ΔViews vs BSR)",
-                    f"{correlation:.2f}",
-                    help="Positive value = more views correspond with better (lower) BSR. Negative = more views correspond with worse (higher) BSR.",
-                )
+                # Calculate correlation between sales and views
+                corr_sales_df = daily_summary[["views_change", "Sales"]].apply(pd.to_numeric, errors="coerce").dropna()
+                if not corr_sales_df.empty and len(corr_sales_df) > 1:
+                    sales_correlation = corr_sales_df["views_change"].corr(corr_sales_df["Sales"])
+                    st.metric(
+                        "Correlation (ΔViews vs Sales)",
+                        f"{sales_correlation:.2f}",
+                        help="Positive value = more views correspond with more sales. Negative = more views correspond with fewer sales.",
+                    )
+                else:
+                    st.metric(
+                        "Correlation (ΔViews vs Sales)",
+                        "N/A",
+                        help="Need at least two days with both view changes and sales values.",
+                    )
             else:
-                st.metric(
-                    "Correlation (ΔViews vs BSR)",
-                    "N/A",
-                    help="Need at least two days with both view changes and BSR values.",
-                )
+                # Compute correlation using day-over-day view deltas vs BSR
+                # Invert BSR so that lower BSR (better rank) = higher value for positive correlation
+                corr_df = daily_summary[["views_change", "BSR Amazon"]].apply(pd.to_numeric, errors="coerce").dropna()
+                if not corr_df.empty:
+                    # Invert BSR: lower BSR (better rank) becomes higher value
+                    # So positive correlation = more views → better rank (lower BSR)
+                    correlation = corr_df["views_change"].corr(-corr_df["BSR Amazon"])
+                    st.metric(
+                        "Correlation (ΔViews vs BSR)",
+                        f"{correlation:.2f}",
+                        help="Positive value = more views correspond with better (lower) BSR. Negative = more views correspond with worse (higher) BSR.",
+                    )
+                else:
+                    st.metric(
+                        "Correlation (ΔViews vs BSR)",
+                        "N/A",
+                        help="Need at least two days with both view changes and BSR values.",
+                    )
 
     # Unified Individual TikTok Videos Section
     st.divider()
