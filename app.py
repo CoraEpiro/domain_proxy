@@ -615,12 +615,49 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         if summary_df["last_date"].notna().any():
             default_start = summary_df["last_date"].max() - pd.Timedelta(days=7)
             default_start_date = default_start.date()
+            default_end_date = summary_df["last_date"].max().date()
         else:
             default_start_date = date.today()
+            default_end_date = date.today()
         type_options = sorted(summary_df["video_type"].dropna().unique().tolist())
         
-        with st.expander("📊 Filter Outstanding Videos", expanded=False):
-            filter_col1, filter_col2, filter_col3 = st.columns(3)
+        with st.expander("📊 Filter Outstanding Videos", expanded=True):
+            # Date range picker
+            date_range_col1, date_range_col2 = st.columns(2)
+            with date_range_col1:
+                date_range_start = st.date_input(
+                    "Date Range Start",
+                    value=default_start_date,
+                    help="Filter videos observed within this date range"
+                )
+            with date_range_col2:
+                date_range_end = st.date_input(
+                    "Date Range End",
+                    value=default_end_date,
+                    help="Filter videos observed within this date range"
+                )
+            
+            # Sort options
+            sort_options = {
+                "Avg Daily Views (High to Low)": ("avg_daily_views", False),
+                "Avg Daily Views (Low to High)": ("avg_daily_views", True),
+                "Creation Date (New to Old)": ("created_date", False),
+                "Creation Date (Old to New)": ("created_date", True),
+                "Total Views (High to Low)": ("latest_views", False),
+                "Total Views (Low to High)": ("latest_views", True),
+                "Daily View Changes (High to Low)": ("views_delta", False),
+                "Daily View Changes (Low to High)": ("views_delta", True),
+            }
+            
+            sort_by = st.selectbox(
+                "Sort By",
+                options=list(sort_options.keys()),
+                index=0,  # Default to "Avg Daily Views (High to Low)"
+                help="Select how to sort the videos. When a date range is selected, 'Daily View Changes' will use the date-range-specific calculation."
+            )
+            
+            # Filter inputs
+            filter_col1, filter_col2 = st.columns(2)
             with filter_col1:
                 min_latest_views = st.number_input(
                     "Min latest views", min_value=0, value=0, step=1000,
@@ -631,11 +668,6 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                     "Min daily views change", min_value=0, value=0, step=500,
                     help="Minimum average daily view increment"
                 )
-            with filter_col3:
-                start_date = st.date_input(
-                    "Observed since",
-                    value=default_start_date,
-                )
 
             selected_types = st.multiselect(
                 "Video types", options=type_options, default=type_options
@@ -643,17 +675,85 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
 
         # Apply filters (outside expander so they work correctly)
         filtered = summary_df.copy()
+        
+        # Apply video type filter
         if selected_types:
             filtered = filtered[filtered["video_type"].isin(selected_types)]
-        if start_date:
-            filtered = filtered[filtered["last_date"].dt.date >= start_date]
+        
+        # Apply date range filter
+        if date_range_start and date_range_end:
+            # Filter videos that have observations within the date range
+            filtered = filtered[
+                (filtered["first_date"].dt.date <= date_range_end)
+                & (filtered["last_date"].dt.date >= date_range_start)
+            ]
         
         # Filter by latest views and average daily change
         filtered = filtered[
             (filtered["latest_views"].fillna(0) >= min_latest_views)
             & (filtered["avg_daily_views"].fillna(0) >= min_daily_change)
         ]
-        filtered = filtered.sort_values("avg_daily_views", ascending=False)
+        
+        # Calculate daily view changes for the selected date range if date range is specified
+        if date_range_start and date_range_end and not details_df.empty:
+            # Create a column for date-range-specific daily view changes
+            filtered = filtered.copy()
+            date_range_daily_changes = []
+            
+            for _, row in filtered.iterrows():
+                video_id = row["video_id"]
+                # Get detail data for this video
+                video_details = details_df[details_df["video_id"] == video_id].copy()
+                if not video_details.empty:
+                    # Filter by date range
+                    video_details["date"] = pd.to_datetime(video_details["date"])
+                    video_details = video_details[
+                        (video_details["date"].dt.date >= date_range_start)
+                        & (video_details["date"].dt.date <= date_range_end)
+                    ]
+                    if not video_details.empty and len(video_details) > 1:
+                        # Calculate view change within the date range
+                        video_details = video_details.sort_values("date")
+                        first_views = pd.to_numeric(video_details["views"].iloc[0], errors="coerce")
+                        last_views = pd.to_numeric(video_details["views"].iloc[-1], errors="coerce")
+                        if pd.isna(first_views) or pd.isna(last_views):
+                            date_range_daily_changes.append(0)
+                        else:
+                            range_delta = last_views - first_views
+                            # Calculate average daily change within range
+                            # Use intervals calculation like in summarize_video_details
+                            # observation_days = (last_date - first_date).days + 1
+                            # intervals = observation_days - 1
+                            days_in_range = (video_details["date"].iloc[-1] - video_details["date"].iloc[0]).days
+                            observation_days = days_in_range + 1
+                            intervals = observation_days - 1 if observation_days > 1 else pd.NA
+                            if pd.notna(intervals) and intervals > 0:
+                                range_avg_daily = range_delta / intervals
+                            else:
+                                range_avg_daily = 0
+                            date_range_daily_changes.append(range_avg_daily)
+                    elif not video_details.empty and len(video_details) == 1:
+                        # Only one data point in range, no change
+                        date_range_daily_changes.append(0)
+                    else:
+                        date_range_daily_changes.append(0)
+                else:
+                    date_range_daily_changes.append(0)
+            
+            filtered["date_range_avg_daily_views"] = date_range_daily_changes
+            
+            # If sorting by daily view changes and date range is selected, use date range specific values
+            if "Daily View Changes" in sort_by:
+                sort_column = "date_range_avg_daily_views"
+                sort_ascending = "Low to High" in sort_by
+            else:
+                sort_column, sort_ascending = sort_options[sort_by]
+            
+            filtered = filtered.sort_values(sort_column, ascending=sort_ascending, na_position='last')
+        else:
+            # Apply sorting
+            sort_column, sort_ascending = sort_options[sort_by]
+            filtered = filtered.sort_values(sort_column, ascending=sort_ascending, na_position='last')
         
         # Show summary of filtered results
         total_videos = len(summary_df)
