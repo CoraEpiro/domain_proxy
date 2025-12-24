@@ -544,25 +544,15 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
             # Calculate correlation between sales and views for Trueseamoss
             # NOTE: We do NOT invert Sales (unlike BSR where lower is better)
             # For Sales, higher is better, so positive correlation = more views = more sales (good)
-            # Filter out extreme view spikes (>100k) which may be viral content that doesn't convert immediately
+            # Use the same data that's shown in the charts (no filtering)
             corr_sales_df = daily_summary[["views_change", "Sales"]].apply(pd.to_numeric, errors="coerce").dropna()
             if not corr_sales_df.empty and len(corr_sales_df) > 1:
-                # Filter out extreme view spikes that may skew correlation
-                # These are likely viral content that doesn't convert immediately to sales
-                corr_sales_df_filtered = corr_sales_df[corr_sales_df["views_change"] < 100000]
-                
-                # Use filtered data if we have enough points, otherwise use all data
-                if len(corr_sales_df_filtered) > 5:
-                    sales_correlation = corr_sales_df_filtered["views_change"].corr(corr_sales_df_filtered["Sales"])
-                    note = " (excluding extreme spikes)"
-                else:
-                    sales_correlation = corr_sales_df["views_change"].corr(corr_sales_df["Sales"])
-                    note = ""
-                
+                # Calculate correlation using all data shown in charts (no filtering)
+                sales_correlation = corr_sales_df["views_change"].corr(corr_sales_df["Sales"])
                 st.metric(
                     "Correlation (ΔViews vs Sales)",
-                    f"{sales_correlation:.2f}{note}",
-                    help="Positive = more views correspond with more sales. Extreme view spikes (>100k) are excluded as they may be viral content that doesn't convert immediately.",
+                    f"{sales_correlation:.2f}",
+                    help="Positive = more views correspond with more sales. Negative may indicate timing/lag effects or that viral content doesn't convert immediately.",
                 )
             else:
                 st.metric(
