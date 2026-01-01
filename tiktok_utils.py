@@ -1705,7 +1705,7 @@ def delete_manual_bsr_entry(date: str, brand: str = "Trueseamoss") -> bool:
 
 
 # ---------- Sales Data Functions ----------
-@st.cache_data(ttl=5, show_spinner=False)  # Very short cache - 5 seconds
+@st.cache_data(ttl=1, show_spinner=False)  # Very short cache - 1 second to ensure fresh data
 def load_sales_data(brand: str = "Trueseamoss") -> list:
     """Load sales data from SQLite for a specific brand."""
     _init_db()
@@ -1720,12 +1720,6 @@ def load_sales_data(brand: str = "Trueseamoss") -> list:
                     PRIMARY KEY (date, brand)
                 )
             """)
-            
-            # Get count and max date to create a cache key that changes when data changes
-            count_row = conn.execute(
-                "SELECT COUNT(*), MAX(date) FROM sales_data WHERE brand = ?",
-                (brand,)
-            ).fetchone()
             
             rows = conn.execute(
                 "SELECT date, sales FROM sales_data WHERE brand = ? ORDER BY date",
