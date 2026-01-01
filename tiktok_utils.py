@@ -1721,6 +1721,12 @@ def load_sales_data(brand: str = "Trueseamoss") -> list:
                 )
             """)
             
+            # Get count and max date to create a cache key that changes when data changes
+            count_row = conn.execute(
+                "SELECT COUNT(*), MAX(date) FROM sales_data WHERE brand = ?",
+                (brand,)
+            ).fetchone()
+            
             rows = conn.execute(
                 "SELECT date, sales FROM sales_data WHERE brand = ? ORDER BY date",
                 (brand,)
