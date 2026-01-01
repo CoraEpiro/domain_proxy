@@ -651,20 +651,43 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         type_options = sorted(summary_df["video_type"].dropna().unique().tolist())
         
         with st.expander("📊 Filter Outstanding Videos", expanded=True):
-            # Date range picker
-            date_range_col1, date_range_col2 = st.columns(2)
-            with date_range_col1:
-                date_range_start = st.date_input(
-                    "Date Range Start",
-                    value=default_start_date,
-                    help="Filter videos created on or after this date and observed within this date range"
+            # Filter mode selection
+            filter_mode = st.radio(
+                "Filter Mode",
+                options=["Date Range", "Exact Date"],
+                index=0,
+                help="Choose between filtering by date range or by a specific date"
+            )
+            
+            if filter_mode == "Date Range":
+                # Date range picker
+                date_range_col1, date_range_col2 = st.columns(2)
+                with date_range_col1:
+                    date_range_start = st.date_input(
+                        "Date Range Start",
+                        value=default_start_date,
+                        help="Filter videos created on or after this date and observed within this date range"
+                    )
+                with date_range_col2:
+                    date_range_end = st.date_input(
+                        "Date Range End",
+                        value=default_end_date,
+                        help="Filter videos observed within this date range"
+                    )
+                exact_date = None
+            else:
+                # Exact date picker
+                if summary_df["last_date"].notna().any():
+                    default_exact_date = summary_df["last_date"].max().date()
+                else:
+                    default_exact_date = date.today()
+                exact_date = st.date_input(
+                    "Select Date",
+                    value=default_exact_date,
+                    help="Show videos that have data on this date, sorted by views on this date"
                 )
-            with date_range_col2:
-                date_range_end = st.date_input(
-                    "Date Range End",
-                    value=default_end_date,
-                    help="Filter videos observed within this date range"
-                )
+                date_range_start = None
+                date_range_end = None
             
             # Sort options
             sort_options = {
@@ -678,11 +701,22 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 "Daily View Changes (Low to High)": ("views_delta", True),
             }
             
+            # If exact date mode, add sort option for views on that date
+            if filter_mode == "Exact Date":
+                sort_options = {
+                    "Views on Selected Date (High to Low)": ("views_on_date", False),
+                    "Views on Selected Date (Low to High)": ("views_on_date", True),
+                    **sort_options
+                }
+                default_sort_index = 0
+            else:
+                default_sort_index = 0
+            
             sort_by = st.selectbox(
                 "Sort By",
                 options=list(sort_options.keys()),
-                index=0,  # Default to "Avg Daily Views (High to Low)"
-                help="Select how to sort the videos. When a date range is selected, 'Daily View Changes' will use the date-range-specific calculation."
+                index=default_sort_index,
+                help="Select how to sort the videos. When a date range is selected, 'Daily View Changes' will use the date-range-specific calculation. When exact date is selected, you can sort by views on that date."
             )
             
             # Filter inputs
@@ -709,8 +743,34 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         if selected_types:
             filtered = filtered[filtered["video_type"].isin(selected_types)]
         
-        # Apply date range filter
-        if date_range_start and date_range_end:
+        # Apply date filter based on mode
+        if filter_mode == "Exact Date" and exact_date:
+            # Filter videos that have data on the exact date
+            if not details_df.empty:
+                # Get all video IDs that have data on this date
+                exact_date_str = exact_date.strftime("%Y-%m-%d")
+                exact_date_dt = pd.to_datetime(exact_date)
+                videos_on_date = details_df[
+                    details_df["date"].dt.date == exact_date
+                ]["video_id"].unique()
+                filtered = filtered[filtered["video_id"].isin(videos_on_date)]
+                
+                # Add views_on_date column for sorting
+                views_on_date_list = []
+                for _, row in filtered.iterrows():
+                    video_id = row["video_id"]
+                    video_details = details_df[
+                        (details_df["video_id"] == video_id) & 
+                        (details_df["date"].dt.date == exact_date)
+                    ]
+                    if not video_details.empty:
+                        views_val = pd.to_numeric(video_details["views"].iloc[0], errors="coerce")
+                        views_on_date_list.append(views_val if pd.notna(views_val) else 0)
+                    else:
+                        views_on_date_list.append(0)
+                filtered = filtered.copy()
+                filtered["views_on_date"] = views_on_date_list
+        elif date_range_start and date_range_end:
             # Filter videos that:
             # 1. Were created on or after the date range start
             # 2. Have observations within the date range
@@ -781,6 +841,14 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
             else:
                 sort_column, sort_ascending = sort_options[sort_by]
             
+            filtered = filtered.sort_values(sort_column, ascending=sort_ascending, na_position='last')
+        elif filter_mode == "Exact Date" and exact_date:
+            # For exact date mode, sort by views_on_date if selected, otherwise use default sort
+            if "Views on Selected Date" in sort_by:
+                sort_column = "views_on_date"
+                sort_ascending = "Low to High" in sort_by
+            else:
+                sort_column, sort_ascending = sort_options[sort_by]
             filtered = filtered.sort_values(sort_column, ascending=sort_ascending, na_position='last')
         else:
             # Apply sorting
