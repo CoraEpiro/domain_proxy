@@ -243,6 +243,7 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 load_recent_core_data.clear()
                 load_video_details_long.clear()
                 load_manual_bsr_entries.clear()
+                load_sales_data.clear()  # Clear sales data cache
                 # Also clear any session state caches
                 for key in list(st.session_state.keys()):
                     if key.startswith("embed_") or key.startswith("details_lookup_") or key.startswith("summary_lookup_"):
@@ -389,8 +390,6 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     # Add sales data to daily_summary (only for Trueseamoss)
     # For Trueseamoss, replace BSR with Sales data
     if brand == "Trueseamoss":
-        # Clear cache to ensure fresh data
-        load_sales_data.clear()
         sales_entries = load_sales_data(brand)
         if sales_entries:
             sales_dict = {entry["date"]: entry["sales"] for entry in sales_entries}
