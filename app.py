@@ -507,9 +507,11 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 sales_chart = create_bsr_line_chart(sales_df)
                 if sales_chart:
                     # Update title to say Sales instead of BSR
-                    sales_chart.update_layout(title="Sales Over Time")
-                    sales_chart.update_traces(name="Sales")
-                    sales_chart.update_layout(yaxis_title="Sales")
+                    sales_chart.update_layout(title="Sales Over Time", yaxis_title="Sales")
+                    sales_chart.update_traces(
+                        name="Sales",
+                        hovertemplate="Date: %{x|%b %d, %Y}<br>Sales: %{y:,.0f}<extra></extra>"
+                    )
                     st.plotly_chart(sales_chart, use_container_width=True)
             elif df["BSR Amazon"].notna().any():
                 bsr_line = create_bsr_line_chart(df)
