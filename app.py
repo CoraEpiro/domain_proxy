@@ -389,12 +389,36 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
     # Add sales data to daily_summary (only for Trueseamoss)
     # For Trueseamoss, replace BSR with Sales data
     if brand == "Trueseamoss":
+        # Clear cache to ensure fresh data
+        load_sales_data.clear()
         sales_entries = load_sales_data(brand)
         if sales_entries:
             sales_dict = {entry["date"]: entry["sales"] for entry in sales_entries}
-            # Replace BSR Amazon with Sales for Trueseamoss
+            # Map sales to existing dates in daily_summary
             daily_summary["Sales"] = daily_summary["date"].dt.strftime("%Y-%m-%d").map(sales_dict)
             daily_summary["Sales"] = pd.to_numeric(daily_summary["Sales"], errors="coerce")
+            
+            # Add rows for dates that have sales but no views
+            sales_dates = set(sales_dict.keys())
+            existing_dates = set(daily_summary["date"].dt.strftime("%Y-%m-%d"))
+            missing_dates = sales_dates - existing_dates
+            
+            if missing_dates:
+                # Create rows for missing dates with sales data
+                missing_rows = []
+                for date_str in missing_dates:
+                    date_obj = pd.to_datetime(date_str)
+                    missing_rows.append({
+                        "date": date_obj,
+                        "total_views": 0,
+                        "BSR Amazon": pd.NA,
+                        "Sales": sales_dict[date_str]
+                    })
+                if missing_rows:
+                    missing_df = pd.DataFrame(missing_rows)
+                    daily_summary = pd.concat([daily_summary, missing_df], ignore_index=True)
+                    daily_summary = daily_summary.sort_values("date").reset_index(drop=True)
+            
             # Replace BSR with Sales values where sales data exists
             daily_summary.loc[daily_summary["Sales"].notna(), "BSR Amazon"] = daily_summary.loc[daily_summary["Sales"].notna(), "Sales"]
     
