@@ -774,7 +774,8 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 videos_on_date = details_df[
                     details_df["date"].dt.date == exact_date
                 ]["video_id"].unique()
-                filtered = filtered[filtered["video_id"].isin(videos_on_date)]
+                filtered = filtered[filtered["video_id"].isin(videos_on_date)].copy()
+                filtered = filtered.reset_index(drop=True)  # Reset index to ensure alignment
                 
                 # Calculate views on selected date and previous day for all filtered videos
                 views_on_date_list = []
@@ -782,7 +783,8 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 views_delta_list = []
                 latest_views_list = []
                 
-                for _, row in filtered.iterrows():
+                for idx in range(len(filtered)):
+                    row = filtered.iloc[idx]
                     video_id = row["video_id"]
                     video_details = details_df[details_df["video_id"] == video_id].copy()
                     video_details["date"] = pd.to_datetime(video_details["date"])
@@ -820,10 +822,9 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                     views_delta_list.append(views_delta_val)
                     latest_views_list.append(views_on_date_val)  # Use views on date as latest_views
                 
-                filtered = filtered.copy()
+                # Update views_delta and latest_views for display
                 filtered["views_on_date"] = views_on_date_list
                 filtered["views_previous_day"] = views_previous_day_list
-                # Update views_delta and latest_views for display
                 filtered["views_delta"] = views_delta_list
                 filtered["latest_views"] = latest_views_list
         elif date_range_start and date_range_end:
