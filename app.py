@@ -735,6 +735,25 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
             selected_types = st.multiselect(
                 "Video types", options=type_options, default=type_options
             )
+            
+            # Number of videos to show
+            st.markdown("**Display Options**")
+            show_all = st.checkbox(
+                "Show all videos (may be slow for large datasets)",
+                value=False,
+                help="If unchecked, only the top videos will be shown based on the limit below"
+            )
+            if not show_all:
+                max_videos_input = st.number_input(
+                    "Maximum videos to display",
+                    min_value=1,
+                    max_value=1000,
+                    value=50,
+                    step=10,
+                    help="Limit the number of videos shown to improve performance"
+                )
+            else:
+                max_videos_input = None
 
         # Apply filters (outside expander so they work correctly)
         filtered = summary_df.copy()
@@ -898,11 +917,13 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
         if total_videos > 0:
             st.caption(f"📹 Showing {filtered_count} of {total_videos} videos (use filters above to adjust)")
         
-        # Limit number of videos rendered to prevent lag (show top 10 by default)
-        max_videos_to_show = 10
-        if filtered_count > max_videos_to_show:
-            st.info(f"💡 Showing top {max_videos_to_show} videos to improve performance. Use filters to narrow down results.")
-            filtered = filtered.head(max_videos_to_show)
+        # Limit number of videos rendered based on user preference
+        if max_videos_input is not None and filtered_count > max_videos_input:
+            filtered = filtered.head(max_videos_input)
+            st.info(f"💡 Showing top {max_videos_input} videos. Check 'Show all videos' to see all {filtered_count} filtered videos.")
+        else:
+            # Show all videos (no limit applied)
+            pass
         
         if not filtered.empty:
             # Display videos with embeds and metrics
