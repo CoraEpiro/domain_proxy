@@ -1,6 +1,6 @@
 import streamlit as st  # type: ignore
 import pandas as pd  # type: ignore
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pathlib import Path
 
 from tiktok_utils import (
@@ -750,26 +750,53 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 # Get all video IDs that have data on this date
                 exact_date_str = exact_date.strftime("%Y-%m-%d")
                 exact_date_dt = pd.to_datetime(exact_date)
+                previous_date = exact_date - timedelta(days=1)
+                
                 videos_on_date = details_df[
                     details_df["date"].dt.date == exact_date
                 ]["video_id"].unique()
                 filtered = filtered[filtered["video_id"].isin(videos_on_date)]
                 
-                # Add views_on_date column for sorting
+                # Calculate views on selected date and previous day for all filtered videos
                 views_on_date_list = []
+                views_previous_day_list = []
+                views_delta_list = []
+                latest_views_list = []
+                
                 for _, row in filtered.iterrows():
                     video_id = row["video_id"]
-                    video_details = details_df[
-                        (details_df["video_id"] == video_id) & 
-                        (details_df["date"].dt.date == exact_date)
-                    ]
-                    if not video_details.empty:
-                        views_val = pd.to_numeric(video_details["views"].iloc[0], errors="coerce")
-                        views_on_date_list.append(views_val if pd.notna(views_val) else 0)
-                    else:
-                        views_on_date_list.append(0)
+                    video_details = details_df[details_df["video_id"] == video_id].copy()
+                    video_details["date"] = pd.to_datetime(video_details["date"])
+                    video_details = video_details.sort_values("date")
+                    
+                    # Get views on selected date
+                    date_data = video_details[video_details["date"].dt.date == exact_date]
+                    views_on_date_val = 0
+                    if not date_data.empty:
+                        views_on_date_val = pd.to_numeric(date_data["views"].iloc[0], errors="coerce")
+                        views_on_date_val = views_on_date_val if pd.notna(views_on_date_val) else 0
+                    
+                    # Get views on previous day
+                    prev_date_data = video_details[video_details["date"].dt.date == previous_date]
+                    views_previous_day_val = 0
+                    if not prev_date_data.empty:
+                        views_previous_day_val = pd.to_numeric(prev_date_data["views"].iloc[0], errors="coerce")
+                        views_previous_day_val = views_previous_day_val if pd.notna(views_previous_day_val) else 0
+                    
+                    # Calculate delta
+                    views_delta_val = views_on_date_val - views_previous_day_val
+                    
+                    views_on_date_list.append(views_on_date_val)
+                    views_previous_day_list.append(views_previous_day_val)
+                    views_delta_list.append(views_delta_val)
+                    latest_views_list.append(views_on_date_val)  # Use views on date as latest_views
+                
                 filtered = filtered.copy()
                 filtered["views_on_date"] = views_on_date_list
+                filtered["views_previous_day"] = views_previous_day_list
+                # Update views_delta and latest_views for display
+                filtered["views_delta"] = views_delta_list
+                filtered["latest_views"] = latest_views_list
         elif date_range_start and date_range_end:
             # Filter videos that:
             # 1. Were created on or after the date range start
