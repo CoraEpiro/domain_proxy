@@ -776,18 +776,28 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                         views_on_date_val = pd.to_numeric(date_data["views"].iloc[0], errors="coerce")
                         views_on_date_val = views_on_date_val if pd.notna(views_on_date_val) else 0
                     
-                    # Get views on previous day
+                    # Get views on previous day - try exact previous date first, then find the most recent date before selected date
                     prev_date_data = video_details[video_details["date"].dt.date == previous_date]
-                    views_previous_day_val = 0
+                    views_previous_day_val = None
                     if not prev_date_data.empty:
                         views_previous_day_val = pd.to_numeric(prev_date_data["views"].iloc[0], errors="coerce")
-                        views_previous_day_val = views_previous_day_val if pd.notna(views_previous_day_val) else 0
+                        views_previous_day_val = views_previous_day_val if pd.notna(views_previous_day_val) else None
+                    else:
+                        # Find the most recent date before the selected date
+                        before_date_data = video_details[video_details["date"].dt.date < exact_date]
+                        if not before_date_data.empty:
+                            before_date_data = before_date_data.sort_values("date")
+                            views_previous_day_val = pd.to_numeric(before_date_data["views"].iloc[-1], errors="coerce")
+                            views_previous_day_val = views_previous_day_val if pd.notna(views_previous_day_val) else None
                     
-                    # Calculate delta
-                    views_delta_val = views_on_date_val - views_previous_day_val
+                    # Calculate delta only if we have both values
+                    if views_previous_day_val is not None:
+                        views_delta_val = views_on_date_val - views_previous_day_val
+                    else:
+                        views_delta_val = 0  # No previous data available
                     
                     views_on_date_list.append(views_on_date_val)
-                    views_previous_day_list.append(views_previous_day_val)
+                    views_previous_day_list.append(views_previous_day_val if views_previous_day_val is not None else 0)
                     views_delta_list.append(views_delta_val)
                     latest_views_list.append(views_on_date_val)  # Use views on date as latest_views
                 
