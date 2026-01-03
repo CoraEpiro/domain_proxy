@@ -701,14 +701,16 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                 "Daily View Changes (Low to High)": ("views_delta", True),
             }
             
-            # If exact date mode, add sort option for views on that date
+            # If exact date mode, add sort option for views on that date and set default to daily views
             if filter_mode == "Exact Date":
                 sort_options = {
+                    "Daily View Changes (High to Low)": ("views_delta", False),
+                    "Daily View Changes (Low to High)": ("views_delta", True),
                     "Views on Selected Date (High to Low)": ("views_on_date", False),
                     "Views on Selected Date (Low to High)": ("views_on_date", True),
                     **sort_options
                 }
-                default_sort_index = 0
+                default_sort_index = 0  # Default to "Daily View Changes (High to Low)"
             else:
                 default_sort_index = 0
             
@@ -900,8 +902,12 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
             
             filtered = filtered.sort_values(sort_column, ascending=sort_ascending, na_position='last')
         elif filter_mode == "Exact Date" and exact_date:
-            # For exact date mode, sort by views_on_date if selected, otherwise use default sort
-            if "Views on Selected Date" in sort_by:
+            # For exact date mode, sort by the selected option
+            # If sorting by daily view changes, use views_delta (which was updated for exact date)
+            if "Daily View Changes" in sort_by:
+                sort_column = "views_delta"
+                sort_ascending = "Low to High" in sort_by
+            elif "Views on Selected Date" in sort_by:
                 sort_column = "views_on_date"
                 sort_ascending = "Low to High" in sort_by
             else:
@@ -943,7 +949,9 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                     created_date = pd.to_datetime(row["created_date"])
                     created_date_str = f" | Created: {created_date.strftime('%Y-%m-%d')}"
                 
-                st.markdown(f"**{video_id}** — {int(row['latest_views']):,} views (+{int(row['views_delta']):,}){created_date_str}")
+                # Display delta as daily views (positive/negative sign)
+                delta_sign = "+" if row['views_delta'] >= 0 else ""
+                st.markdown(f"**{video_id}** — {int(row['latest_views']):,} views ({delta_sign}{int(row['views_delta']):,} daily views){created_date_str}")
                 
                 col_video, col_chart = st.columns([1, 2])
                 
@@ -967,7 +975,7 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                     # Show metrics
                     metric_cols = st.columns(3)
                     metric_cols[0].metric("Total Views", f"{int(row['latest_views']):,}")
-                    metric_cols[1].metric("Δ Views", f"{int(row['views_delta']):,}")
+                    metric_cols[1].metric("Daily Views", f"{int(row['views_delta']):,}")
                     metric_cols[2].metric("Avg Daily Views", f"{int(row['avg_daily_views'] or 0):,}")
                     metric_cols = st.columns(3)
                     metric_cols[0].metric("Likes", f"{int(row['latest_likes'] or 0):,}")
