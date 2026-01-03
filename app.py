@@ -734,8 +734,17 @@ def render_current_mode_dashboard(brand: str = "Trueseamoss"):
                     help="Minimum average daily view increment"
                 )
 
+            # In exact date mode, exclude reposts by default (they don't have daily tracking data)
+            if filter_mode == "Exact Date":
+                # Filter out repost types - only show Original videos by default
+                default_types = [t for t in type_options if "repost" not in t.lower()]
+                if not default_types:  # If no non-repost types, use all types
+                    default_types = type_options
+            else:
+                default_types = type_options
+            
             selected_types = st.multiselect(
-                "Video types", options=type_options, default=type_options
+                "Video types", options=type_options, default=default_types
             )
             
             # Number of videos to show
