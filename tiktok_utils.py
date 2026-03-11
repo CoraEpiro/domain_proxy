@@ -428,6 +428,38 @@ def create_current_dataset(
     return combined.reset_index(drop=True)
 
 
+def _apply_long_gap_rangebreaks(
+    fig: go.Figure, dates: pd.Series, min_gap_days: int = 7
+) -> None:
+    """Hide long no-data intervals on date axes to keep charts visually continuous."""
+    if dates is None or len(dates) == 0:
+        return
+
+    ordered_dates = (
+        pd.to_datetime(dates, errors="coerce")
+        .dropna()
+        .drop_duplicates()
+        .sort_values()
+        .reset_index(drop=True)
+    )
+    if len(ordered_dates) < 2:
+        return
+
+    breaks: list[dict] = []
+    previous = ordered_dates.iloc[0]
+    for current in ordered_dates.iloc[1:]:
+        gap_days = (current - previous).days
+        if gap_days > min_gap_days:
+            start = previous + pd.Timedelta(days=1)
+            end = current - pd.Timedelta(days=1)
+            if start <= end:
+                breaks.append(dict(bounds=[start.to_pydatetime(), end.to_pydatetime()]))
+        previous = current
+
+    if breaks:
+        fig.update_xaxes(rangebreaks=breaks)
+
+
 def create_views_vs_bsr_chart(df: pd.DataFrame) -> go.Figure | None:
     if df.empty:
         return None
@@ -468,6 +500,7 @@ def create_views_vs_bsr_chart(df: pd.DataFrame) -> go.Figure | None:
         height=450,
         template="plotly_white",
     )
+    _apply_long_gap_rangebreaks(fig, df["date"])
     return fig
 
 
@@ -522,6 +555,7 @@ def create_views_change_vs_bsr_chart(daily_df: pd.DataFrame) -> go.Figure | None
         height=450,
         template="plotly_white",
     )
+    _apply_long_gap_rangebreaks(fig, df["date"])
     return fig
 
 
@@ -536,6 +570,7 @@ def create_views_line_chart(df: pd.DataFrame) -> go.Figure | None:
         markers=True,
     )
     fig.update_layout(xaxis_title="Date", yaxis_title="Daily View Changes", template="plotly_white")
+    _apply_long_gap_rangebreaks(fig, df["date"])
     return fig
 
 
@@ -554,6 +589,7 @@ def create_bsr_line_chart(df: pd.DataFrame) -> go.Figure | None:
         yaxis_title="Amazon BSR",
         template="plotly_white",
     )
+    _apply_long_gap_rangebreaks(fig, df["date"])
     return fig
 
 
